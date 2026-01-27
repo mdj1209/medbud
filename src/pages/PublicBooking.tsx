@@ -263,7 +263,7 @@ const PublicBooking = () => {
             appointment_id: newAppointmentId,
             token_number: newTokenNumber,
             token_date: selectedDate,
-            token_type: "appointment",
+            token_type: "online",
             status: "waiting",
             estimated_time: `${selectedDate}T${selectedTime}`,
           },
