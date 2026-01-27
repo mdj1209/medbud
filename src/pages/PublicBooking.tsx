@@ -228,58 +228,51 @@ const PublicBooking = () => {
 
     setLoading(true);
     try {
-      // Create appointment
-      const { data: appointment, error: apptError } = await supabase
+      // NOTE: Public users (not logged in) aren't allowed to SELECT appointments/tokens.
+      // Using `.select()` after insert triggers an RLS error when PostgREST tries to
+      // return the inserted row. So we generate IDs client-side and insert with
+      // `returning: 'minimal'`.
+      const newAppointmentId = crypto.randomUUID();
+      const newTokenNumber = Number(String(Date.now()).slice(-4));
+
+      const { error: apptError } = await supabase
         .from("appointments")
-        .insert({
-          doctor_id: selectedDoctor.id,
-          appointment_date: selectedDate,
-          appointment_time: selectedTime,
-          symptoms: bookingDetails.symptoms || null,
-          patient_name: bookingDetails.patientName.trim(),
-          patient_email: bookingDetails.patientEmail.trim(),
-          patient_phone: bookingDetails.patientPhone.trim(),
-          payment_status: "completed",
-          payment_method: paymentMethod,
-          status: "confirmed"
-        })
-        .select()
-        .single();
+        .insert([
+          {
+            id: newAppointmentId,
+            doctor_id: selectedDoctor.id,
+            appointment_date: selectedDate,
+            appointment_time: selectedTime,
+            symptoms: bookingDetails.symptoms || null,
+            patient_name: bookingDetails.patientName.trim(),
+            patient_email: bookingDetails.patientEmail.trim(),
+            patient_phone: bookingDetails.patientPhone.trim(),
+            payment_status: "completed",
+            payment_method: paymentMethod,
+            status: "confirmed",
+          },
+        ]);
 
       if (apptError) throw apptError;
 
-      // Get next token number for the day
-      const { data: existingTokens } = await supabase
+      const { error: tokenError } = await supabase
         .from("tokens")
-        .select("token_number")
-        .eq("doctor_id", selectedDoctor.id)
-        .eq("token_date", selectedDate)
-        .order("token_number", { ascending: false })
-        .limit(1);
-
-      const nextTokenNumber = existingTokens && existingTokens.length > 0 
-        ? existingTokens[0].token_number + 1 
-        : 1;
-
-      // Create token
-      const { data: token, error: tokenError } = await supabase
-        .from("tokens")
-        .insert({
-          doctor_id: selectedDoctor.id,
-          appointment_id: appointment.id,
-          token_number: nextTokenNumber,
-          token_date: selectedDate,
-          token_type: "appointment",
-          status: "waiting",
-          estimated_time: `${selectedDate}T${selectedTime}`
-        })
-        .select()
-        .single();
+        .insert([
+          {
+            doctor_id: selectedDoctor.id,
+            appointment_id: newAppointmentId,
+            token_number: newTokenNumber,
+            token_date: selectedDate,
+            token_type: "appointment",
+            status: "waiting",
+            estimated_time: `${selectedDate}T${selectedTime}`,
+          },
+        ]);
 
       if (tokenError) throw tokenError;
 
-      setTokenNumber(nextTokenNumber);
-      setAppointmentId(appointment.id);
+      setTokenNumber(newTokenNumber);
+      setAppointmentId(newAppointmentId);
       setStep(6);
       toast({ title: "Appointment booked successfully!" });
     } catch (error: any) {
