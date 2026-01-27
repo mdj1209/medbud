@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowLeft, MapPin, Stethoscope, CreditCard, CheckCircle, Download, 
-  Phone, Mail, User, GraduationCap, Clock, Award, Star, Building2
+  Phone, Mail, User, GraduationCap, Clock, Award, Star, Building2, Calendar
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { z } from "zod";
@@ -293,63 +293,233 @@ const PublicBooking = () => {
     }
   };
 
-  const downloadReceipt = () => {
-    const receiptContent = `
-MEDBUD - APPOINTMENT RECEIPT
-========================================
-
-Booking Details:
-----------------
-Appointment ID: ${appointmentId}
-Token Number: #${tokenNumber}
-
-Patient Information:
--------------------
-Name: ${bookingDetails.patientName}
-Email: ${bookingDetails.patientEmail}
-Phone: ${bookingDetails.patientPhone}
-
-Hospital Details:
------------------
-Hospital: ${selectedClinic?.clinic_name}
-Address: ${selectedClinic?.address}, ${selectedClinic?.city}
-Pincode: ${selectedClinic?.pincode}
-
-Doctor Details:
----------------
-Doctor: ${selectedDoctor?.profiles.full_name}
-Specialization: ${selectedDoctor?.specialization}
-Education: ${selectedDoctor?.education}
-Experience: ${selectedDoctor?.experience_years} years
-
-Appointment Details:
---------------------
-Date: ${selectedDate}
-Time: ${selectedTime}
-Symptoms: ${bookingDetails.symptoms || "N/A"}
-
-Payment Details:
-----------------
-Consultation Fee: ₹${selectedDoctor?.consultation_fee}
-Payment Method: ${paymentMethod.toUpperCase()}
-Payment Status: COMPLETED
-
-========================================
-Please arrive 10 minutes before your scheduled time.
-Bring a valid ID and this receipt.
-
-Thank you for choosing MedBud!
-    `;
-
-    const blob = new Blob([receiptContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `MedBud-Receipt-${appointmentId}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const downloadReceipt = async () => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFillColor(34, 197, 94);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(28);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MedBud', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text('APPOINTMENT RECEIPT', pageWidth / 2, 32, { align: 'center' });
+    
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    
+    // Booking confirmation badge
+    doc.setFillColor(220, 252, 231);
+    doc.roundedRect(60, 50, 90, 20, 3, 3, 'F');
+    doc.setTextColor(22, 101, 52);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('✓ BOOKING CONFIRMED', pageWidth / 2, 63, { align: 'center' });
+    
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    
+    // Token Number - Large prominent display
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Token Number', pageWidth / 2, 85, { align: 'center' });
+    doc.setFontSize(48);
+    doc.setTextColor(34, 197, 94);
+    doc.text(`#${tokenNumber}`, pageWidth / 2, 105, { align: 'center' });
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Appointment ID: ${appointmentId}`, pageWidth / 2, 115, { align: 'center' });
+    
+    // Line separator
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, 125, pageWidth - 20, 125);
+    
+    let yPos = 135;
+    const leftCol = 25;
+    const rightCol = 110;
+    
+    // Section: Patient Information
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 197, 94);
+    doc.text('Patient Information', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Name:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(bookingDetails.patientName, leftCol + 25, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Email:', rightCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(bookingDetails.patientEmail, rightCol + 25, yPos);
+    
+    yPos += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Phone:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(bookingDetails.patientPhone, leftCol + 25, yPos);
+    
+    yPos += 15;
+    
+    // Section: Hospital Details
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 197, 94);
+    doc.text('Hospital Details', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Hospital:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(selectedClinic?.clinic_name || '', leftCol + 30, yPos);
+    
+    yPos += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Address:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${selectedClinic?.address}, ${selectedClinic?.city}`, leftCol + 30, yPos);
+    
+    yPos += 15;
+    
+    // Section: Doctor Details
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 197, 94);
+    doc.text('Doctor Details', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Doctor:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(selectedDoctor?.profiles.full_name || '', leftCol + 30, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Specialization:', rightCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(selectedDoctor?.specialization || '', rightCol + 40, yPos);
+    
+    yPos += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Experience:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${selectedDoctor?.experience_years} years`, leftCol + 35, yPos);
+    
+    yPos += 15;
+    
+    // Section: Appointment Details
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 197, 94);
+    doc.text('Appointment Details', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Date:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), leftCol + 20, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Time:', rightCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(selectedTime, rightCol + 20, yPos);
+    
+    yPos += 8;
+    if (bookingDetails.symptoms) {
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Symptoms:', leftCol, yPos);
+      doc.setTextColor(0, 0, 0);
+      const symptomsLines = doc.splitTextToSize(bookingDetails.symptoms, 120);
+      doc.text(symptomsLines, leftCol + 30, yPos);
+      yPos += symptomsLines.length * 5;
+    }
+    
+    yPos += 10;
+    
+    // Section: Payment Details
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 197, 94);
+    doc.text('Payment Details', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Consultation Fee:', leftCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`₹${selectedDoctor?.consultation_fee}`, leftCol + 45, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Payment Method:', rightCol, yPos);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(paymentMethod.toUpperCase(), rightCol + 45, yPos);
+    
+    yPos += 8;
+    doc.setFillColor(220, 252, 231);
+    doc.roundedRect(leftCol, yPos - 3, 50, 10, 2, 2, 'F');
+    doc.setTextColor(22, 101, 52);
+    doc.setFontSize(9);
+    doc.text('✓ PAYMENT COMPLETED', leftCol + 3, yPos + 4);
+    
+    // Footer
+    yPos = 265;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, yPos, pageWidth - 20, yPos);
+    
+    yPos += 8;
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('⏰ Please arrive 10 minutes before your scheduled time', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 6;
+    doc.text('📋 Bring a valid ID and this receipt', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    doc.setTextColor(34, 197, 94);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Thank you for choosing MedBud!', pageWidth / 2, yPos, { align: 'center' });
+    
+    // Save
+    doc.save(`MedBud-Receipt-${tokenNumber}.pdf`);
   };
 
   const goBack = () => {
@@ -849,75 +1019,214 @@ Thank you for choosing MedBud!
                 className="text-center space-y-6"
               >
                 <motion.div 
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", duration: 0.5 }}
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: "spring", duration: 0.8, bounce: 0.4 }}
                   className="flex justify-center"
                 >
-                  <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
-                    <CheckCircle className="h-16 w-16 text-primary" />
+                  <div className="w-28 h-28 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center shadow-lg">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.3, type: "spring" }}
+                    >
+                      <CheckCircle className="h-16 w-16 text-primary" />
+                    </motion.div>
                   </div>
                 </motion.div>
                 
-                <div>
-                  <h2 className="text-3xl font-bold mb-2">Booking Confirmed!</h2>
-                  <p className="text-muted-foreground">Your appointment has been successfully booked</p>
-                </div>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <h2 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    Appointment Booked Successfully!
+                  </h2>
+                  <p className="text-muted-foreground">Your appointment has been confirmed. See you soon!</p>
+                </motion.div>
 
-                <Card className="p-8 max-w-md mx-auto">
-                  <div className="mb-6">
-                    <p className="text-sm text-muted-foreground mb-2">Your Token Number</p>
-                    <p className="text-6xl font-bold text-primary">#{tokenNumber}</p>
-                  </div>
-                  
-                  <div className="space-y-3 text-left border-t pt-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Patient Name</p>
-                      <p className="font-medium">{bookingDetails.patientName}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Hospital</p>
-                      <p className="font-medium">{selectedClinic?.clinic_name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Doctor</p>
-                      <p className="font-medium">{selectedDoctor?.profiles.full_name}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Date</p>
-                        <p className="font-medium">{new Date(selectedDate).toLocaleDateString('en-IN')}</p>
+                {/* Animated Ticket */}
+                <motion.div
+                  initial={{ opacity: 0, y: 40, rotateX: -15 }}
+                  animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                  transition={{ delay: 0.4, duration: 0.6 }}
+                >
+                  <Card className="max-w-lg mx-auto overflow-hidden shadow-xl border-2 border-primary/20">
+                    {/* Ticket Header */}
+                    <div className="bg-gradient-to-r from-primary to-primary/80 p-6 text-primary-foreground">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-xl font-bold">MedBud</h3>
+                          <p className="text-sm opacity-90">Appointment Ticket</p>
+                        </div>
+                        <motion.div
+                          animate={{ scale: [1, 1.1, 1] }}
+                          transition={{ repeat: Infinity, duration: 2 }}
+                          className="text-right"
+                        >
+                          <p className="text-xs opacity-80">Token Number</p>
+                          <p className="text-4xl font-bold">#{tokenNumber}</p>
+                        </motion.div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Time</p>
-                        <p className="font-medium">{selectedTime}</p>
-                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Appointment ID</p>
-                      <p className="font-medium text-xs break-all">{appointmentId}</p>
+
+                    {/* Ticket Perforation */}
+                    <div className="flex justify-between px-2 bg-muted/30">
+                      {[...Array(20)].map((_, i) => (
+                        <div key={i} className="w-2 h-2 rounded-full bg-background -mt-1" />
+                      ))}
                     </div>
-                  </div>
-                </Card>
 
-                <div className="bg-muted/50 p-4 rounded-lg max-w-md mx-auto">
-                  <p className="text-sm text-muted-foreground">
-                    ⏰ Please arrive <strong>10 minutes</strong> before your appointment time
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    📋 Bring a valid ID and this receipt
-                  </p>
-                </div>
+                    {/* Ticket Body */}
+                    <div className="p-6 space-y-4">
+                      {/* Unique Appointment ID */}
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="bg-muted/50 p-3 rounded-lg"
+                      >
+                        <p className="text-xs text-muted-foreground">Unique Appointment ID</p>
+                        <p className="font-mono text-sm font-bold text-primary break-all">{appointmentId}</p>
+                      </motion.div>
 
-                <div className="flex gap-4 justify-center flex-wrap">
-                  <Button onClick={downloadReceipt} variant="outline" size="lg">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Receipt
+                      {/* Patient Details */}
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.7 }}
+                        className="grid grid-cols-2 gap-4"
+                      >
+                        <div className="text-left">
+                          <p className="text-xs text-muted-foreground">Patient Name</p>
+                          <p className="font-semibold">{bookingDetails.patientName}</p>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-xs text-muted-foreground">Phone</p>
+                          <p className="font-semibold">{bookingDetails.patientPhone}</p>
+                        </div>
+                      </motion.div>
+
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.75 }}
+                        className="text-left"
+                      >
+                        <p className="text-xs text-muted-foreground">Email</p>
+                        <p className="font-semibold">{bookingDetails.patientEmail}</p>
+                      </motion.div>
+
+                      {/* Divider */}
+                      <div className="border-t border-dashed border-muted-foreground/30" />
+
+                      {/* Hospital & Doctor */}
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.8 }}
+                        className="text-left space-y-3"
+                      >
+                        <div>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <MapPin className="h-3 w-3" /> Hospital
+                          </p>
+                          <p className="font-semibold">{selectedClinic?.clinic_name}</p>
+                          <p className="text-sm text-muted-foreground">{selectedClinic?.address}, {selectedClinic?.city}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Stethoscope className="h-3 w-3" /> Doctor
+                          </p>
+                          <p className="font-semibold">{selectedDoctor?.profiles.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{selectedDoctor?.specialization} • {selectedDoctor?.experience_years} years exp</p>
+                        </div>
+                      </motion.div>
+
+                      {/* Divider */}
+                      <div className="border-t border-dashed border-muted-foreground/30" />
+
+                      {/* Date, Time & Payment */}
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.9 }}
+                        className="grid grid-cols-3 gap-4"
+                      >
+                        <div className="text-left">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" /> Date
+                          </p>
+                          <p className="font-semibold text-sm">{new Date(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" /> Time
+                          </p>
+                          <p className="font-semibold text-sm">{selectedTime}</p>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <CreditCard className="h-3 w-3" /> Fee
+                          </p>
+                          <p className="font-semibold text-sm text-primary">₹{selectedDoctor?.consultation_fee}</p>
+                        </div>
+                      </motion.div>
+
+                      {/* Symptoms if any */}
+                      {bookingDetails.symptoms && (
+                        <motion.div
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.95 }}
+                          className="text-left"
+                        >
+                          <p className="text-xs text-muted-foreground">Symptoms</p>
+                          <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{bookingDetails.symptoms}</p>
+                        </motion.div>
+                      )}
+
+                      {/* Payment Status Badge */}
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 1, type: "spring" }}
+                        className="flex items-center justify-center gap-2"
+                      >
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
+                          <CheckCircle className="h-4 w-4" />
+                          Payment {paymentMethod === 'cash' ? 'At Clinic' : 'Completed'} • {paymentMethod.toUpperCase()}
+                        </span>
+                      </motion.div>
+                    </div>
+
+                    {/* Ticket Footer */}
+                    <div className="bg-muted/50 p-4 text-center space-y-1">
+                      <p className="text-sm font-medium">
+                        ⏰ Please arrive <span className="text-primary font-bold">10 minutes</span> before your appointment
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        📋 Bring a valid ID and this receipt for verification
+                      </p>
+                    </div>
+                  </Card>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1.2 }}
+                  className="flex gap-4 justify-center flex-wrap pt-4"
+                >
+                  <Button onClick={downloadReceipt} variant="default" size="lg" className="shadow-lg">
+                    <Download className="mr-2 h-5 w-5" />
+                    Download PDF Receipt
                   </Button>
-                  <Button onClick={() => navigate("/")} size="lg">
+                  <Button onClick={() => navigate("/")} variant="outline" size="lg">
                     Back to Home
                   </Button>
-                </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
