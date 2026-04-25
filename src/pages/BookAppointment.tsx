@@ -129,12 +129,29 @@ const BookAppointment = () => {
   };
 
   const fetchDoctors = async () => {
+    if (!selectedClinic) return;
     setLoading(true);
-    // Fetch ALL active doctors
+
+    // First get doctor_ids that belong to this clinic
+    const { data: clinicDoctors, error: clinicErr } = await supabase
+      .from("clinics")
+      .select("doctor_id")
+      .eq("id", selectedClinic.id);
+
+    if (clinicErr || !clinicDoctors || clinicDoctors.length === 0) {
+      setDoctors([]);
+      setLoading(false);
+      return;
+    }
+
+    const doctorIds = clinicDoctors.map(c => c.doctor_id);
+
+    // Fetch only the doctors that belong to this clinic
     const { data: doctorsData, error: doctorsError } = await supabase
       .from("doctors")
       .select("*")
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .in("id", doctorIds);
     
     if (doctorsError) {
       toast({ title: "Error loading doctors", variant: "destructive" });
@@ -320,14 +337,26 @@ const BookAppointment = () => {
       return;
     }
 
-    if (!selectedDoctor || !selectedClinic) return;
+    if (!selectedDoctor || !selectedClinic) {
+      toast({ title: "Missing doctor or clinic selection", variant: "destructive" });
+      return;
+    }
+
+    // Re-fetch user if not available
+    let currentUser = user;
+    if (!currentUser) {
+      const { data: { user: freshUser } } = await supabase.auth.getUser();
+      if (!freshUser) {
+        toast({ title: "Please login to continue", description: "Your session may have expired.", variant: "destructive" });
+        navigate("/auth");
+        return;
+      }
+      currentUser = freshUser;
+      setUser(freshUser);
+    }
 
     setLoading(true);
     try {
-      // NOTE: Public users (not logged in) aren't allowed to SELECT appointments/tokens.
-      // Using `.select()` after insert triggers an RLS error when PostgREST tries to
-      // return the inserted row. So we generate IDs client-side and insert with
-      // `returning: 'minimal'`.
       // Get count of tokens for that date to give an ordered token number
       const { count, error: countError } = await supabase
         .from("tokens")
@@ -347,7 +376,7 @@ const BookAppointment = () => {
         .insert([
           {
             id: newAppointmentId,
-            patient_id: user.id,
+            patient_id: currentUser.id,
             doctor_id: selectedDoctor.id,
             appointment_date: selectedDate,
             appointment_time: selectedTime,
@@ -358,7 +387,10 @@ const BookAppointment = () => {
           },
         ]);
 
-      if (apptError) throw apptError;
+      if (apptError) {
+        console.error("Appointment insert error:", apptError);
+        throw apptError;
+      }
 
       const { error: tokenError } = await supabase
         .from("tokens")
@@ -374,14 +406,18 @@ const BookAppointment = () => {
           },
         ]);
 
-      if (tokenError) throw tokenError;
+      if (tokenError) {
+        console.error("Token insert error:", tokenError);
+        throw tokenError;
+      }
 
       setTokenNumber(newTokenNumber);
       setAppointmentId(newAppointmentId);
       setStep(6);
       toast({ title: "Appointment booked successfully!" });
     } catch (error: any) {
-      toast({ title: "Error booking appointment", description: error.message, variant: "destructive" });
+      console.error("Booking error:", error);
+      toast({ title: "Error booking appointment", description: error.message || "Something went wrong. Please try again.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
