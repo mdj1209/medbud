@@ -24,7 +24,7 @@ const Index = () => {
     if (session) {
       navigate('/book-appointment');
     } else {
-      navigate('/auth');
+      navigate('/auth?returnTo=/book-appointment');
     }
   };
 

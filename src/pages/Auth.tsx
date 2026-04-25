@@ -65,12 +65,18 @@ const Auth = () => {
           .eq("user_id", session.user.id);
         
         const userRoles = roles?.map(r => r.role) || [];
+        const getRedirectPath = (defaultPath: string) => {
+          const params = new URLSearchParams(window.location.search);
+          const returnTo = params.get("returnTo");
+          return returnTo || defaultPath;
+        };
+
         if (userRoles.includes("doctor")) {
-          navigate("/doctor-dashboard");
+          navigate(getRedirectPath("/doctor-dashboard"));
         } else if (userRoles.includes("admin")) {
-          navigate("/dashboard");
+          navigate(getRedirectPath("/dashboard"));
         } else {
-          navigate("/patient-dashboard");
+          navigate(getRedirectPath("/patient-dashboard"));
         }
       }
     };
@@ -150,7 +156,9 @@ const Auth = () => {
           title: "Success!",
           description: "Account created successfully. Redirecting...",
         });
-        navigate("/patient-dashboard");
+        const params = new URLSearchParams(window.location.search);
+        const returnTo = params.get("returnTo");
+        navigate(returnTo || "/patient-dashboard");
       }
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -208,12 +216,18 @@ const Auth = () => {
           description: "Logged in successfully.",
         });
         
+        const getRedirectPath = (defaultPath: string) => {
+          const params = new URLSearchParams(window.location.search);
+          const returnTo = params.get("returnTo");
+          return returnTo || defaultPath;
+        };
+
         if (userRoles.includes("doctor")) {
-          navigate("/doctor-dashboard");
+          navigate(getRedirectPath("/doctor-dashboard"));
         } else if (userRoles.includes("admin")) {
-          navigate("/dashboard");
+          navigate(getRedirectPath("/dashboard"));
         } else {
-          navigate("/patient-dashboard");
+          navigate(getRedirectPath("/patient-dashboard"));
         }
       }
     } catch (error) {

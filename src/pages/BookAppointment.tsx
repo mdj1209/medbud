@@ -68,7 +68,7 @@ const BookAppointment = () => {
   const checkAuth = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      navigate("/auth");
+      navigate("/auth?returnTo=/book-appointment");
       return;
     }
     setUser(user);
