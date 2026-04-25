@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Calendar, 
-  Clock, 
-  FileText, 
-  LogOut, 
-  User, 
+import {
+  Calendar,
+  Clock,
+  FileText,
+  LogOut,
+  User,
   Users,
   Stethoscope,
   Bell,
@@ -41,7 +41,7 @@ const DoctorDashboard = () => {
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [todayStats, setTodayStats] = useState({ total: 0, completed: 0, waiting: 0 });
-  
+
   // For creating/editing records
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [recordForm, setRecordForm] = useState({
@@ -89,7 +89,7 @@ const DoctorDashboard = () => {
         .select("*")
         .eq("user_id", userId)
         .single();
-      
+
       if (!doctorData) {
         toast({
           title: "Access Denied",
@@ -178,7 +178,7 @@ const DoctorDashboard = () => {
           .eq("doctor_id", doctorInfo.id)
           .eq("token_date", today)
           .order("token_number", { ascending: true });
-        
+
         if (tokensData) {
           setTokens(tokensData);
           const completed = tokensData.filter(t => t.status === "completed").length;
@@ -194,7 +194,7 @@ const DoctorDashboard = () => {
 
     // Find the latest token for this patient
     const latestToken = tokens.find(t => t.patient_id === selectedPatient.id && t.status === "in_progress");
-    
+
     if (!latestToken) {
       toast({ title: "Error", description: "No active token found for this patient", variant: "destructive" });
       return;
@@ -229,7 +229,7 @@ const DoctorDashboard = () => {
     navigate("/");
   };
 
-  const filteredPatients = patients.filter(p => 
+  const filteredPatients = patients.filter(p =>
     p.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.phone?.includes(searchQuery)
   );
@@ -371,11 +371,10 @@ const DoctorDashboard = () => {
                   {tokens.filter(t => t.status !== "completed").slice(0, 5).map((token) => (
                     <div key={token.id} className="p-4 border-b border-border last:border-0 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                          token.status === "in_progress" 
-                            ? "bg-primary text-primary-foreground" 
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${token.status === "in_progress"
+                            ? "bg-primary text-primary-foreground"
                             : "bg-muted text-muted-foreground"
-                        }`}>
+                          }`}>
                           {token.token_number}
                         </div>
                         <div>
@@ -383,13 +382,12 @@ const DoctorDashboard = () => {
                           <p className="text-xs text-muted-foreground">{token.profiles?.phone || "No phone"}</p>
                         </div>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        token.status === "in_progress" 
+                      <span className={`px-2 py-1 rounded-full text-xs ${token.status === "in_progress"
                           ? "bg-primary/10 text-primary"
                           : token.status === "waiting"
-                          ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                          : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      }`}>
+                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                            : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                        }`}>
                         {token.status}
                       </span>
                     </div>
@@ -441,15 +439,15 @@ const DoctorDashboard = () => {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             className="flex-1"
                             onClick={() => handleTokenStatusChange(token.id, "in_progress")}
                           >
                             <PlayCircle className="w-4 h-4 mr-1" /> Call Now
                           </Button>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="outline"
                             onClick={() => handleTokenStatusChange(token.id, "cancelled")}
                           >
@@ -489,8 +487,8 @@ const DoctorDashboard = () => {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="outline"
                             className="flex-1"
                             onClick={() => {
@@ -500,7 +498,7 @@ const DoctorDashboard = () => {
                           >
                             <FileText className="w-4 h-4 mr-1" /> Add Record
                           </Button>
-                          <Button 
+                          <Button
                             size="sm"
                             onClick={() => handleTokenStatusChange(token.id, "completed")}
                           >

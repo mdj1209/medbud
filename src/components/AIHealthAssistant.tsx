@@ -73,7 +73,7 @@ const AIHealthAssistant = () => {
                     key={i}
                     variant="outline"
                     size="sm"
-                    className="text-left justify-start h-auto py-2 px-3 text-xs"
+                    className="text-left justify-start h-auto py-2 px-3 text-xs whitespace-normal break-words"
                     onClick={() => {
                       setInput(prompt);
                       sendMessage(prompt);

@@ -19,17 +19,17 @@ const Footer = () => {
             <h3 className="font-semibold text-foreground mb-4">Quick Links</h3>
             <ul className="space-y-2">
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
+                <a href="#about" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
                   About Us
                 </a>
               </li>
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
+                <a href="#features" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
                   Features
                 </a>
               </li>
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
+                <a href="#doctors" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
                   For Doctors
                 </a>
               </li>

@@ -8,27 +8,27 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* MedBud Design System - Medical Platform Theme */
-    --background: 210 20% 98%;  /* #F8FAFB */
-    --foreground: 215 25% 12%;  /* #1A202C */
+    /* MedBud Design System - Teal Theme */
+    --background: 240 100% 98.8%;  /* #f9f9ff */
+    --foreground: 216 45% 12.2%;  /* #111c2d */
 
     --card: 0 0% 100%;
-    --card-foreground: 215 25% 12%;
+    --card-foreground: 216 45% 12.2%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 12%;
+    --popover-foreground: 216 45% 12.2%;
 
-    --primary: 207 73% 57%;  /* #4A90E2 - Main brand color */
+    --primary: 174 100% 20%;  /* #00685d */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 207 64% 47%;  /* #2C7BC4 */
+    --secondary: 198 3% 37%;  /* #5c5f61 */
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 20% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 221 73% 92%; /* #d8e3fb */
+    --muted-foreground: 198 3% 39%; /* #626567 */
 
-    --accent: 207 73% 57%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 170 85% 75%; /* #8cf5e4 */
+    --accent-foreground: 173 100% 6%; /* #00201c */
 
     --success: 152 69% 39%;  /* #10B981 */
     --success-foreground: 0 0% 100%;
@@ -36,23 +36,23 @@ All colors MUST be HSL.
     --warning: 32 95% 51%;  /* #F59E0B */
     --warning-foreground: 0 0% 100%;
 
-    --destructive: 4 90% 58%;  /* #EF4444 */
+    --destructive: 0 76% 42%;  /* #ba1a1a */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 207 73% 57%;
+    --border: 204 8% 89%; /* #e0e3e5 */
+    --input: 168 14% 76%; /* #bcc9c6 */
+    --ring: 174 100% 20%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(207 73% 57%), hsl(207 64% 47%));
+    --gradient-primary: linear-gradient(135deg, hsl(170 85% 75%), hsl(174 100% 20%));
     --gradient-success: linear-gradient(135deg, hsl(152 69% 39%), hsl(152 69% 49%));
     
     /* Shadows */
-    --shadow-soft: 0 2px 8px hsl(207 73% 57% / 0.08);
-    --shadow-medium: 0 4px 16px hsl(207 73% 57% / 0.12);
-    --shadow-large: 0 8px 24px hsl(207 73% 57% / 0.16);
+    --shadow-soft: 0 2px 8px hsl(174 100% 20% / 0.08);
+    --shadow-medium: 0 4px 16px hsl(174 100% 20% / 0.12);
+    --shadow-large: 0 8px 24px hsl(174 100% 20% / 0.16);
     
     /* Transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -60,25 +60,25 @@ All colors MUST be HSL.
   }
 
   .dark {
-    --background: 215 25% 12%;
-    --foreground: 210 20% 98%;
+    --background: 216 45% 12.2%;
+    --foreground: 240 100% 98.8%;
 
     --card: 215 25% 15%;
-    --card-foreground: 210 20% 98%;
+    --card-foreground: 240 100% 98.8%;
 
     --popover: 215 25% 15%;
-    --popover-foreground: 210 20% 98%;
+    --popover-foreground: 240 100% 98.8%;
 
-    --primary: 207 73% 57%;
+    --primary: 174 100% 40%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 207 64% 47%;
+    --secondary: 198 3% 67%;
     --secondary-foreground: 0 0% 100%;
 
     --muted: 215 25% 20%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 207 73% 57%;
+    --accent: 170 85% 75%;
     --accent-foreground: 0 0% 100%;
 
     --success: 152 69% 39%;
@@ -87,18 +87,22 @@ All colors MUST be HSL.
     --warning: 32 95% 51%;
     --warning-foreground: 0 0% 100%;
 
-    --destructive: 4 90% 58%;
+    --destructive: 0 76% 42%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 215 25% 25%;
     --input: 215 25% 25%;
-    --ring: 207 73% 57%;
+    --ring: 174 100% 40%;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 
   body {

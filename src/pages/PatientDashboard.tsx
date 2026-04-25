@@ -4,13 +4,13 @@ import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Calendar, 
-  Clock, 
-  FileText, 
-  LogOut, 
-  User, 
-  Bot, 
+import {
+  Calendar,
+  Clock,
+  FileText,
+  LogOut,
+  User,
+  Bot,
   ChevronRight,
   Stethoscope,
   Bell
@@ -92,8 +92,8 @@ const PatientDashboard = () => {
           ...apt,
           doctors: {
             ...apt.doctors,
-            profiles: Array.isArray(apt.doctors?.profiles) 
-              ? apt.doctors.profiles[0] 
+            profiles: Array.isArray(apt.doctors?.profiles)
+              ? apt.doctors.profiles[0]
               : apt.doctors?.profiles
           }
         }));
@@ -120,8 +120,8 @@ const PatientDashboard = () => {
           ...token,
           doctors: {
             ...token.doctors,
-            profiles: Array.isArray(token.doctors?.profiles) 
-              ? token.doctors.profiles[0] 
+            profiles: Array.isArray(token.doctors?.profiles)
+              ? token.doctors.profiles[0]
               : token.doctors?.profiles
           }
         }));
@@ -223,7 +223,7 @@ const PatientDashboard = () => {
                     ))}
                   </div>
                 </div>
-                <Button 
+                <Button
                   onClick={() => setShowAIAssistant(!showAIAssistant)}
                   className="hidden md:flex"
                   variant={showAIAssistant ? "secondary" : "default"}
@@ -294,8 +294,8 @@ const PatientDashboard = () => {
                   <div className="p-6 text-center text-muted-foreground">
                     <Calendar className="w-10 h-10 mx-auto mb-2 opacity-50" />
                     <p>No upcoming appointments</p>
-                    <Button 
-                      variant="link" 
+                    <Button
+                      variant="link"
                       className="mt-2"
                       onClick={() => navigate("/book-appointment")}
                     >
@@ -321,11 +321,10 @@ const PatientDashboard = () => {
                           <p className="text-sm text-muted-foreground">{apt.appointment_time}</p>
                         </div>
                       </div>
-                      <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${
-                        apt.status === "confirmed" 
+                      <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${apt.status === "confirmed"
                           ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                           : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                      }`}>
+                        }`}>
                         {apt.status}
                       </span>
                     </div>
@@ -408,7 +407,7 @@ const PatientDashboard = () => {
         {/* Mobile AI Assistant Modal */}
         {showAIAssistant && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <div 
+            <div
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setShowAIAssistant(false)}
             />
