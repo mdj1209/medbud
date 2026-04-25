@@ -11,6 +11,7 @@ import DoctorDashboard from "./pages/DoctorDashboard";
 import NotFound from "./pages/NotFound";
 import BookAppointment from "./pages/BookAppointment";
 import DoctorSignup from "./pages/DoctorSignup";
+import DoctorAuth from "./pages/DoctorAuth";
 
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/doctor-auth" element={<DoctorAuth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/patient-dashboard" element={<PatientDashboard />} />
           <Route path="/doctor-dashboard" element={<DoctorDashboard />} />

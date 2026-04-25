@@ -38,7 +38,7 @@ const Navbar = () => {
             <a href="/#testimonials" className="text-foreground hover:text-primary transition-smooth">
               Testimonials
             </a>
-            <a href="/#doctors" className="text-foreground hover:text-primary transition-smooth">
+            <a href="/doctor-auth" className="text-foreground hover:text-primary transition-smooth">
               For Doctors
             </a>
           </div>
