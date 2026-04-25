@@ -400,7 +400,7 @@ const BookAppointment = () => {
             appointment_id: newAppointmentId,
             token_number: newTokenNumber,
             token_date: selectedDate,
-            token_type: "appointment",
+            token_type: "online",
             status: "waiting",
             estimated_time: `${selectedDate}T${selectedTime}`,
           },
@@ -1165,9 +1165,41 @@ const BookAppointment = () => {
                         <RadioGroupItem value="card" id="card" />
                         <Label htmlFor="card" className="cursor-pointer flex-1">Credit/Debit Card</Label>
                       </div>
-                      <div className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
-                        <RadioGroupItem value="upi" id="upi" />
-                        <Label htmlFor="upi" className="cursor-pointer flex-1">UPI</Label>
+                      <div className="flex flex-col space-y-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
+                        <div className="flex items-center space-x-3">
+                          <RadioGroupItem value="upi" id="upi" />
+                          <Label htmlFor="upi" className="cursor-pointer flex-1">UPI</Label>
+                        </div>
+                        {paymentMethod === "upi" && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            className="pt-4 border-t"
+                          >
+                            <div className="flex flex-col md:flex-row items-center gap-6 p-4 bg-muted/30 rounded-xl">
+                              <div className="w-48 h-48 bg-white p-2 rounded-xl shadow-sm">
+                                <img
+                                  src={((selectedDoctor?.timings as any)?.upiQrUrl) || "/default_qr.png"}
+                                  alt="UPI QR Code"
+                                  className="w-full h-full object-contain"
+                                />
+                              </div>
+                              <div className="text-center md:text-left space-y-2">
+                                <p className="text-sm text-muted-foreground">Scan QR to pay directly to</p>
+                                <p className="text-lg font-bold">{selectedDoctor?.profiles?.full_name}</p>
+                                <div className="bg-primary/10 px-4 py-2 rounded-lg inline-block">
+                                  <p className="text-xl font-mono text-primary font-bold tracking-wider">
+                                    {((selectedDoctor?.timings as any)?.upiNumber) || "8688286621"}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-medium mt-2">Amount Payable: ₹{selectedDoctor?.consultation_fee}</p>
+                                <p className="text-xs text-muted-foreground max-w-xs mt-2">
+                                  Please complete the payment and click "Confirm Booking & Pay" below. Keep screenshot for reference.
+                                </p>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
                       </div>
                       <div className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
                         <RadioGroupItem value="cash" id="cash" />

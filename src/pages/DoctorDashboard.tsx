@@ -26,7 +26,7 @@ import {
 import { Session } from "@supabase/supabase-js";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail";
+type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail" | "settings";
 
 const DoctorDashboard = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -355,6 +355,21 @@ const DoctorDashboard = () => {
                   <p className="text-muted-foreground text-sm mb-4">View scheduled appointments</p>
                   <div className="flex items-center text-primary text-sm font-medium">
                     {appointments.length} today <ChevronRight className="w-4 h-4 ml-1" />
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => setViewMode("settings")}
+                  className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <User className="w-7 h-7 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Payment Settings</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Configure your UPI number and QR Code</p>
+                  <div className="flex items-center text-primary text-sm font-medium">
+                    Update Details <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
               </div>
@@ -715,6 +730,92 @@ const DoctorDashboard = () => {
                   </Button>
                   <Button variant="outline" onClick={() => setViewMode("tokens")}>
                     Cancel
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Settings View */}
+          {viewMode === "settings" && doctorInfo && (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
+            >
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="icon" onClick={() => setViewMode("dashboard")}>
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Payment Settings</h2>
+                  <p className="text-muted-foreground">Configure your UPI Details</p>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-xl border border-border p-6 space-y-6 max-w-2xl">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">UPI Number or ID</label>
+                  <Input
+                    placeholder="e.g. 8688286621 or name@upi"
+                    defaultValue={((doctorInfo.timings as any)?.upiNumber) || ""}
+                    onChange={(e) => {
+                      const timings = (doctorInfo.timings as any) || {};
+                      setDoctorInfo({ ...doctorInfo, timings: { ...timings, upiNumber: e.target.value } });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">This number will be displayed to patients for payment.</p>
+                </div>
+                
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">UPI QR Code Image</label>
+                  <div className="flex flex-col sm:flex-row gap-4 items-start">
+                    <div className="w-48 h-48 bg-muted/30 border border-dashed rounded-xl flex items-center justify-center p-2">
+                      <img 
+                        src={((doctorInfo.timings as any)?.upiQrUrl) || "/default_qr.png"} 
+                        alt="UPI Preview" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-3">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              const timings = (doctorInfo.timings as any) || {};
+                              setDoctorInfo({ ...doctorInfo, timings: { ...timings, upiQrUrl: reader.result } });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">Upload your QR code image. It will be securely stored and displayed to your patients.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t flex gap-3">
+                  <Button 
+                    className="flex-1 max-w-xs"
+                    onClick={async () => {
+                      const { error } = await supabase
+                        .from('doctors')
+                        .update({ timings: doctorInfo.timings })
+                        .eq('id', doctorInfo.id);
+                      if (error) {
+                        toast({ title: 'Error', description: 'Failed to update settings', variant: 'destructive' });
+                      } else {
+                        toast({ title: 'Success', description: 'Payment settings saved successfully' });
+                      }
+                    }}
+                  >
+                    <Save className="w-4 h-4 mr-2" /> Save Settings
                   </Button>
                 </div>
               </div>
