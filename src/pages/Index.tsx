@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import IntroVideo from "@/components/IntroVideo";
+
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { EffectCoverflow, Pagination, Navigation } from 'swiper/modules';
@@ -17,23 +17,7 @@ import 'swiper/css/navigation';
 
 const Index = () => {
   const navigate = useNavigate();
-  const [showIntro, setShowIntro] = useState(true);
-  const [hasSeenIntro, setHasSeenIntro] = useState(false);
 
-  useEffect(() => {
-    // Check if user has already seen the intro in this session
-    const introSeen = sessionStorage.getItem("introSeen");
-    if (introSeen) {
-      setShowIntro(false);
-      setHasSeenIntro(true);
-    }
-  }, []);
-
-  const handleIntroComplete = () => {
-    setShowIntro(false);
-    setHasSeenIntro(true);
-    sessionStorage.setItem("introSeen", "true");
-  };
 
   const handleBookingClick = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -44,9 +28,7 @@ const Index = () => {
     }
   };
 
-  if (showIntro && !hasSeenIntro) {
-    return <IntroVideo onComplete={handleIntroComplete} />;
-  }
+
 
   const specialties = [
     { icon: HeartPulse, title: "Cardiology", description: "Expert care for your heart and cardiovascular system." },
