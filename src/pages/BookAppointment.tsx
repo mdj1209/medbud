@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowLeft, MapPin, Stethoscope, CreditCard, CheckCircle, Download, 
-  Phone, Mail, User, GraduationCap, Clock, Award, Star, Building2, Calendar
+  Phone, Mail, User, GraduationCap, Clock, Award, Star, Building2, Calendar, Search
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { z } from "zod";
@@ -90,6 +90,10 @@ const BookAppointment = () => {
   });
 
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [showOthersSearch, setShowOthersSearch] = useState(false);
+  const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<(Doctor & { clinic?: Clinic })[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   useEffect(() => {
     if (step === 1) {
@@ -174,7 +178,104 @@ const BookAppointment = () => {
 
   const handleClinicSelect = (clinic: Clinic) => {
     setSelectedClinic(clinic);
+    setShowOthersSearch(false);
     setStep(2);
+  };
+
+  const handleOthersClick = () => {
+    setShowOthersSearch(true);
+    setDoctorSearchQuery("");
+    setSearchResults([]);
+  };
+
+  const searchDoctorByName = async (query: string) => {
+    setDoctorSearchQuery(query);
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      // Search profiles by name
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .ilike("full_name", `%${query.trim()}%`);
+
+      if (!profiles || profiles.length === 0) {
+        setSearchResults([]);
+        setSearchLoading(false);
+        return;
+      }
+
+      const userIds = profiles.map(p => p.id);
+
+      // Get doctors matching these profile ids
+      const { data: doctorsData } = await supabase
+        .from("doctors")
+        .select("*")
+        .eq("is_active", true)
+        .in("user_id", userIds);
+
+      if (!doctorsData || doctorsData.length === 0) {
+        setSearchResults([]);
+        setSearchLoading(false);
+        return;
+      }
+
+      // Get clinics for these doctors
+      const doctorIds = doctorsData.map(d => d.id);
+      const { data: clinicsData } = await supabase
+        .from("clinics")
+        .select("*")
+        .in("doctor_id", doctorIds);
+
+      const results = doctorsData.map(doc => {
+        const profile = profiles.find(p => p.id === doc.user_id);
+        const clinic = clinicsData?.find(c => c.doctor_id === doc.id);
+        return {
+          ...doc,
+          profiles: { full_name: profile?.full_name || 'Dr. ' + doc.specialization },
+          clinic: clinic || undefined,
+        };
+      }) as (Doctor & { clinic?: Clinic })[];
+
+      setSearchResults(results);
+    } catch (err) {
+      console.error(err);
+      setSearchResults([]);
+    }
+    setSearchLoading(false);
+  };
+
+  const handleSearchDoctorSelect = (doctor: Doctor & { clinic?: Clinic }) => {
+    // Set the clinic from the doctor's clinic info
+    if (doctor.clinic) {
+      setSelectedClinic(doctor.clinic);
+    } else {
+      // Create a placeholder clinic
+      setSelectedClinic({
+        id: 'other',
+        clinic_name: 'Independent Practice',
+        address: 'N/A',
+        city: 'N/A',
+        pincode: '',
+        state: '',
+      });
+    }
+    setSelectedDoctor({
+      id: doctor.id,
+      user_id: doctor.user_id,
+      specialization: doctor.specialization,
+      consultation_fee: doctor.consultation_fee,
+      experience_years: doctor.experience_years,
+      bio: doctor.bio,
+      education: doctor.education,
+      is_active: doctor.is_active,
+      profiles: doctor.profiles,
+    });
+    setShowOthersSearch(false);
+    setStep(3); // Go directly to doctor profile
   };
 
   const handleDoctorSelect = (doctor: Doctor) => {
@@ -598,6 +699,7 @@ const BookAppointment = () => {
                     <p className="text-muted-foreground">No hospitals available in Vizag at the moment</p>
                   </Card>
                 ) : (
+                  <>
                   <div className="grid md:grid-cols-2 gap-4">
                     {clinics.map((clinic, index) => (
                       <motion.div
@@ -627,7 +729,110 @@ const BookAppointment = () => {
                         </Card>
                       </motion.div>
                     ))}
+
+                    {/* Others Option */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: clinics.length * 0.1 }}
+                    >
+                      <Card
+                        className={`p-6 cursor-pointer transition-all duration-300 hover:shadow-lg group ${
+                          showOthersSearch ? 'border-primary bg-primary/5' : 'hover:border-primary border-dashed'
+                        }`}
+                        onClick={handleOthersClick}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-14 h-14 rounded-xl bg-secondary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                            <Search className="h-7 w-7 text-secondary group-hover:text-primary transition-colors" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">
+                              Others
+                            </h3>
+                            <p className="text-muted-foreground text-sm">
+                              Search for a specific doctor by name
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
+                    </motion.div>
                   </div>
+
+                  {/* Doctor Search Panel */}
+                  {showOthersSearch && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-6 space-y-4"
+                    >
+                      <Card className="p-6">
+                        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                          <Search className="h-5 w-5 text-primary" />
+                          Search Doctor by Name
+                        </h3>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                          <Input
+                            placeholder="Type doctor's name..."
+                            value={doctorSearchQuery}
+                            onChange={(e) => searchDoctorByName(e.target.value)}
+                            className="pl-10 text-lg"
+                            autoFocus
+                          />
+                        </div>
+
+                        {searchLoading && (
+                          <div className="text-center py-6">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                            <p className="text-sm text-muted-foreground mt-2">Searching...</p>
+                          </div>
+                        )}
+
+                        {!searchLoading && doctorSearchQuery.length >= 2 && searchResults.length === 0 && (
+                          <div className="text-center py-6">
+                            <User className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-muted-foreground">No registered doctor found with that name</p>
+                            <p className="text-xs text-muted-foreground mt-1">Make sure the doctor has signed up on MedBud</p>
+                          </div>
+                        )}
+
+                        {searchResults.length > 0 && (
+                          <div className="mt-4 space-y-3">
+                            {searchResults.map((doc) => (
+                              <Card
+                                key={doc.id}
+                                className="p-4 cursor-pointer hover:border-primary hover:shadow-md transition-all group"
+                                onClick={() => handleSearchDoctorSelect(doc)}
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                    <Stethoscope className="h-6 w-6 text-primary" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold group-hover:text-primary transition-colors">
+                                      {doc.profiles.full_name}
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground">
+                                      {doc.specialization} • {doc.experience_years} yrs exp • ₹{doc.consultation_fee}
+                                    </p>
+                                    {doc.clinic && (
+                                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                        <MapPin className="h-3 w-3" />
+                                        {doc.clinic.clinic_name}, {doc.clinic.city}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Badge variant="secondary" className="flex-shrink-0">Select</Badge>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </Card>
+                    </motion.div>
+                  )}
+                  </>
                 )}
               </motion.div>
             )}
