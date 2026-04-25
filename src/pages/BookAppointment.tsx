@@ -92,6 +92,7 @@ const BookAppointment = () => {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [showOthersSearch, setShowOthersSearch] = useState(false);
   const [doctorSearchQuery, setDoctorSearchQuery] = useState("");
+  const [allSearchableDoctors, setAllSearchableDoctors] = useState<(Doctor & { clinic?: Clinic })[]>([]);
   const [searchResults, setSearchResults] = useState<(Doctor & { clinic?: Clinic })[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -123,7 +124,8 @@ const BookAppointment = () => {
     if (error) {
       toast({ title: "Error loading hospitals", variant: "destructive" });
     } else {
-      setClinics(data || []);
+      const filteredClinics = (data || []).filter(c => !c.clinic_name.toLowerCase().includes("sm2"));
+      setClinics(filteredClinics);
     }
     setLoading(false);
   };
@@ -199,48 +201,30 @@ const BookAppointment = () => {
     setStep(2);
   };
 
-  const handleOthersClick = () => {
+  const handleOthersClick = async () => {
     setShowOthersSearch(true);
     setDoctorSearchQuery("");
-    setSearchResults([]);
-  };
-
-  const searchDoctorByName = async (query: string) => {
-    setDoctorSearchQuery(query);
-    if (query.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
     setSearchLoading(true);
+    
     try {
-      // Search profiles by name
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .ilike("full_name", `%${query.trim()}%`);
-
-      if (!profiles || profiles.length === 0) {
-        setSearchResults([]);
-        setSearchLoading(false);
-        return;
-      }
-
-      const userIds = profiles.map(p => p.id);
-
-      // Get doctors matching these profile ids
       const { data: doctorsData } = await supabase
         .from("doctors")
         .select("*")
-        .eq("is_active", true)
-        .in("user_id", userIds);
+        .eq("is_active", true);
 
       if (!doctorsData || doctorsData.length === 0) {
+        setAllSearchableDoctors([]);
         setSearchResults([]);
         setSearchLoading(false);
         return;
       }
 
-      // Get clinics for these doctors
+      const userIds = doctorsData.map(d => d.user_id);
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", userIds);
+
       const doctorIds = doctorsData.map(d => d.id);
       const { data: clinicsData } = await supabase
         .from("clinics")
@@ -248,7 +232,7 @@ const BookAppointment = () => {
         .in("doctor_id", doctorIds);
 
       const results = doctorsData.map(doc => {
-        const profile = profiles.find(p => p.id === doc.user_id);
+        const profile = profilesData?.find(p => p.id === doc.user_id);
         const clinic = clinicsData?.find(c => c.doctor_id === doc.id);
         return {
           ...doc,
@@ -257,12 +241,41 @@ const BookAppointment = () => {
         };
       }) as (Doctor & { clinic?: Clinic })[];
 
+      setAllSearchableDoctors(results);
       setSearchResults(results);
     } catch (err) {
       console.error(err);
+      setAllSearchableDoctors([]);
       setSearchResults([]);
     }
+    
     setSearchLoading(false);
+  };
+
+  const searchDoctorByName = (query: string) => {
+    setDoctorSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults(allSearchableDoctors);
+      return;
+    }
+    
+    const loweredQuery = query.toLowerCase();
+    const filtered = allSearchableDoctors.filter(doc => {
+      const nameMatch = doc.profiles?.full_name?.toLowerCase().includes(loweredQuery);
+      const deptMatch = doc.specialization?.toLowerCase().includes(loweredQuery);
+      return nameMatch || deptMatch;
+    });
+
+    // Sort by name match priority (those whose name includes query should appear before dept match)
+    const sorted = [...filtered].sort((a, b) => {
+      const aNameMatch = a.profiles?.full_name?.toLowerCase().includes(loweredQuery);
+      const bNameMatch = b.profiles?.full_name?.toLowerCase().includes(loweredQuery);
+      if (aNameMatch && !bNameMatch) return -1;
+      if (!aNameMatch && bNameMatch) return 1;
+      return 0;
+    });
+    
+    setSearchResults(sorted);
   };
 
   const handleSearchDoctorSelect = (doctor: Doctor & { clinic?: Clinic }) => {
@@ -810,7 +823,7 @@ const BookAppointment = () => {
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                           <Input
-                            placeholder="Type doctor's name..."
+                            placeholder="Search by doctor name or department..."
                             value={doctorSearchQuery}
                             onChange={(e) => searchDoctorByName(e.target.value)}
                             className="pl-10 text-lg"
@@ -825,10 +838,10 @@ const BookAppointment = () => {
                           </div>
                         )}
 
-                        {!searchLoading && doctorSearchQuery.length >= 2 && searchResults.length === 0 && (
+                        {!searchLoading && doctorSearchQuery.length > 0 && searchResults.length === 0 && (
                           <div className="text-center py-6">
                             <User className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
-                            <p className="text-muted-foreground">No registered doctor found with that name</p>
+                            <p className="text-muted-foreground">No registered doctor found with that name or department</p>
                             <p className="text-xs text-muted-foreground mt-1">Make sure the doctor has signed up on MedBud</p>
                           </div>
                         )}
