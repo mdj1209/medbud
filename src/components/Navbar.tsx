@@ -38,6 +38,9 @@ const Navbar = () => {
             <a href="/#testimonials" className="text-foreground hover:text-primary transition-smooth">
               Testimonials
             </a>
+            <a href="/doctor-auth" className="text-foreground hover:text-primary transition-smooth">
+              For Doctors
+            </a>
           </div>
 
           <div className="flex items-center gap-3">
