@@ -118,13 +118,19 @@ const BookAppointment = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("clinics")
-      .select("id, clinic_name, address, city, pincode, state")
+      .select("id, clinic_name, address, city, pincode, state, doctor_id")
       .eq("city", "Vizag");
     
     if (error) {
       toast({ title: "Error loading hospitals", variant: "destructive" });
     } else {
-      const filteredClinics = (data || []).filter(c => !c.clinic_name.toLowerCase().includes("sm2"));
+      const filteredClinics = (data || []).filter(c => 
+        !c.clinic_name.toLowerCase().includes("sm2") &&
+        (c.clinic_name.toLowerCase().includes("hospital") || 
+         c.clinic_name.toLowerCase().includes("medic") ||
+         c.clinic_name.toLowerCase().includes("care") ||
+         c.clinic_name.toLowerCase().includes("health"))
+      );
       setClinics(filteredClinics);
     }
     setLoading(false);
@@ -706,7 +712,7 @@ const BookAppointment = () => {
 
   const goBack = () => {
     if (step === 1) {
-      navigate("/");
+      navigate("/patient-dashboard");
     } else if (step === 3) {
       setStep(2);
       setSelectedDoctor(null);
@@ -785,48 +791,51 @@ const BookAppointment = () => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
                     <p className="mt-4 text-muted-foreground">Loading hospitals...</p>
                   </div>
-                ) : clinics.length === 0 ? (
-                  <Card className="p-8 text-center">
-                    <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No hospitals available in Vizag at the moment</p>
-                  </Card>
                 ) : (
                   <>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {clinics.map((clinic, index) => (
-                      <motion.div
-                        key={clinic.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                      >
-                        <Card
-                          className="p-6 cursor-pointer hover:border-primary transition-all duration-300 hover:shadow-lg group"
-                          onClick={() => handleClinicSelect(clinic)}
+                    {clinics.length === 0 ? (
+                      <Card className="p-8 text-center md:col-span-2">
+                        <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">No hospitals available in Vizag at the moment</p>
+                      </Card>
+                    ) : (
+                      clinics.map((clinic, index) => (
+                        <motion.div
+                          key={clinic.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
                         >
-                          <div className="flex items-start gap-4">
-                            <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                              <Building2 className="h-7 w-7 text-primary" />
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">
-                                {clinic.clinic_name}
-                              </h3>
-                              <div className="flex items-start gap-1 text-muted-foreground text-sm">
-                                <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                <span>{clinic.address}, {clinic.city} - {clinic.pincode}</span>
+                          <Card
+                            className="p-6 cursor-pointer hover:border-primary transition-all duration-300 hover:shadow-lg group"
+                            onClick={() => handleClinicSelect(clinic)}
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                                <Building2 className="h-7 w-7 text-primary" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">
+                                  {clinic.clinic_name}
+                                </h3>
+                                <div className="flex items-start gap-1 text-muted-foreground text-sm">
+                                  <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                  <span>{clinic.address}, {clinic.city} - {clinic.pincode}</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Card>
-                      </motion.div>
-                    ))}
+                          </Card>
+                        </motion.div>
+                      ))
+                    )}
 
                     {/* Others Option */}
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: clinics.length * 0.1 }}
+                      className={clinics.length === 0 ? "md:col-span-2" : ""}
                     >
                       <Card
                         className={`p-6 cursor-pointer transition-all duration-300 hover:shadow-lg group ${
@@ -1090,10 +1099,16 @@ const BookAppointment = () => {
                         <Clock className="h-5 w-5 text-primary" />
                         <h3 className="font-semibold text-lg">Available Timings</h3>
                       </div>
-                      <div className="pl-7 grid grid-cols-2 md:grid-cols-3 gap-2">
-                        <Badge variant="outline" className="justify-center py-2">Mon-Fri: 9AM - 6PM</Badge>
-                        <Badge variant="outline" className="justify-center py-2">Sat: 9AM - 2PM</Badge>
-                        <Badge variant="outline" className="justify-center py-2">Sun: Closed</Badge>
+                      <div className="pl-7 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Badge variant="outline" className="justify-center py-2.5 text-sm">
+                          Mon-Fri: {((selectedDoctor.timings as any)?.mon_fri) || "9AM - 6PM"}
+                        </Badge>
+                        <Badge variant="outline" className="justify-center py-2.5 text-sm">
+                          Sat: {((selectedDoctor.timings as any)?.sat) || "9AM - 2PM"}
+                        </Badge>
+                        <Badge variant="outline" className="justify-center py-2.5 text-sm">
+                          Sun: {((selectedDoctor.timings as any)?.sun) || "Closed"}
+                        </Badge>
                       </div>
                     </div>
                   </div>

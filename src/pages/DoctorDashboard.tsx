@@ -573,18 +573,18 @@ const DoctorDashboard = () => {
                         </Button>
                       )}
                     </div>
-                    <ScrollArea className="max-h-72">
+                    <ScrollArea className="max-h-[450px]">
                       {notifications.length === 0 ? (
                         <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
                       ) : (
-                        notifications.slice(0, 15).map((n) => (
+                        notifications.map((n) => (
                           <div
                             key={n.id}
                             className={`p-3 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${!n.is_read ? "bg-primary/5" : ""}`}
                             onClick={() => { markAsRead(n.id); if (n.type === "prepone_request") setViewMode("prepone-requests"); }}
                           >
                             <p className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{n.title}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{n.message}</p>
                             <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
                           </div>
                         ))
@@ -684,10 +684,10 @@ const DoctorDashboard = () => {
                   <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                     <User className="w-7 h-7 text-primary" />
                   </div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Payment Settings</h3>
-                  <p className="text-muted-foreground text-sm mb-4">Configure your UPI number and QR Code</p>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Profile & Settings</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Configure your UPI, QR code and Working Hours</p>
                   <div className="flex items-center text-primary text-sm font-medium">
-                    Update Details <ChevronRight className="w-4 h-4 ml-1" />
+                    Configure Settings <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
 
@@ -938,36 +938,43 @@ const DoctorDashboard = () => {
                     <motion.div
                       key={patient.id}
                       whileHover={{ scale: 1.02 }}
-                      className="bg-card rounded-xl p-4 border border-border hover:border-primary transition-colors"
+                      className="bg-card rounded-xl p-4 border border-border hover:border-primary transition-colors cursor-pointer group shadow-soft"
+                      onClick={() => {
+                        setViewingRecordPatient(patient);
+                        setShowViewRecordModal(true);
+                      }}
                     >
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-12 h-12 rounded-full bg-gradient-primary flex items-center justify-center">
-                          <User className="w-6 h-6 text-white" />
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                          <User className="w-7 h-7 text-white" />
                         </div>
                         <div>
-                          <p className="font-medium text-foreground">{patient.full_name}</p>
+                          <p className="font-bold text-foreground text-lg">{patient.full_name}</p>
                           <p className="text-sm text-muted-foreground">{patient.phone}</p>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-sm mb-3">
-                        <span className="text-muted-foreground">{records.length} records</span>
+                      <div className="flex items-center justify-between text-sm mb-4 px-1">
+                        <span className="flex items-center gap-1.5 text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                          <FileText className="w-3.5 h-3.5 text-primary" />
+                          {records.length} {records.length === 1 ? 'Record' : 'Records'}
+                        </span>
                       </div>
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1 text-xs"
+                          className="flex-1 text-xs font-medium"
                           onClick={(e) => {
                             e.stopPropagation();
                             setViewingRecordPatient(patient);
                             setShowViewRecordModal(true);
                           }}
                         >
-                          <Eye className="w-3.5 h-3.5 mr-1" /> View
+                          <Eye className="w-3.5 h-3.5 mr-1.5" /> View
                         </Button>
                         <Button
                           size="sm"
-                          className="flex-1 text-xs"
+                          className="flex-1 text-xs font-medium"
                           onClick={(e) => {
                             e.stopPropagation();
                             setViewingRecordPatient(patient);
@@ -981,13 +988,20 @@ const DoctorDashboard = () => {
                                 notes: latest.notes || "",
                                 attachments: (latest.attachments as string[]) || []
                               });
-                              setShowUpdateRecordModal(true);
                             } else {
-                              toast({ title: "No Records", description: "This patient has no records to update.", variant: "destructive" });
+                              // Reset form for a fresh record if none exists
+                              setUpdatingRecordId(null);
+                              setUpdateRecordForm({
+                                diagnosis: "",
+                                prescription: "",
+                                notes: "",
+                                attachments: []
+                              });
                             }
+                            setShowUpdateRecordModal(true);
                           }}
                         >
-                          <Pencil className="w-3.5 h-3.5 mr-1" /> Update
+                          <Pencil className="w-3.5 h-3.5 mr-1.5" /> {records.length > 0 ? 'Update' : 'Add Record'}
                         </Button>
                       </div>
                     </motion.div>
@@ -1139,8 +1153,8 @@ const DoctorDashboard = () => {
                   <ArrowLeft className="w-5 h-5" />
                 </Button>
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground">Payment Settings</h2>
-                  <p className="text-muted-foreground">Configure your UPI Details</p>
+                  <h2 className="text-2xl font-bold text-foreground">Profile & Settings</h2>
+                  <p className="text-muted-foreground">Configure your UPI and Working Hours</p>
                 </div>
               </div>
 
@@ -1187,6 +1201,49 @@ const DoctorDashboard = () => {
                       <p className="text-xs text-muted-foreground">Upload your QR code image. It will be securely stored and displayed to your patients.</p>
                     </div>
                   </div>
+                </div>
+
+                <div className="pt-4 border-t space-y-4">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-primary" />
+                    Available Timings
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">Mon - Fri</label>
+                      <Input
+                        placeholder="e.g. 9AM - 6PM"
+                        defaultValue={((doctorInfo.timings as any)?.mon_fri) || "9AM - 6PM"}
+                        onChange={(e) => {
+                          const timings = (doctorInfo.timings as any) || {};
+                          setDoctorInfo({ ...doctorInfo, timings: { ...timings, mon_fri: e.target.value } });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">Saturday</label>
+                      <Input
+                        placeholder="e.g. 9AM - 2PM"
+                        defaultValue={((doctorInfo.timings as any)?.sat) || "9AM - 2PM"}
+                        onChange={(e) => {
+                          const timings = (doctorInfo.timings as any) || {};
+                          setDoctorInfo({ ...doctorInfo, timings: { ...timings, sat: e.target.value } });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">Sunday</label>
+                      <Input
+                        placeholder="e.g. Closed"
+                        defaultValue={((doctorInfo.timings as any)?.sun) || "Closed"}
+                        onChange={(e) => {
+                          const timings = (doctorInfo.timings as any) || {};
+                          setDoctorInfo({ ...doctorInfo, timings: { ...timings, sun: e.target.value } });
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Patients will see these timings when booking an appointment.</p>
                 </div>
 
                 <div className="pt-4 border-t flex gap-3">
