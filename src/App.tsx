@@ -16,7 +16,36 @@ import DoctorAuth from "./pages/DoctorAuth";
 
 const queryClient = new QueryClient();
 
-const App = () => (
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const MissingConfig = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background p-4 text-center">
+    <div className="max-w-md space-y-6">
+      <h1 className="text-3xl font-bold text-destructive">Configuration Missing</h1>
+      <p className="text-muted-foreground">
+        Supabase environment variables are not set. The app cannot function without them.
+      </p>
+      <div className="bg-muted p-4 rounded-lg text-left text-sm font-mono overflow-auto max-h-48">
+        <p className="font-bold mb-2">Required Variables:</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>VITE_SUPABASE_URL</li>
+          <li>VITE_SUPABASE_ANON_KEY (or VITE_SUPABASE_PUBLISHABLE_KEY)</li>
+        </ul>
+      </div>
+      <p className="text-sm">
+        Please add these variables to your Vercel project settings and redeploy.
+      </p>
+    </div>
+  </div>
+);
+
+const App = () => {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return <MissingConfig />;
+  }
+
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -38,6 +67,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;
