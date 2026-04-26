@@ -73,10 +73,7 @@ const Index = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
               <Button size="lg" onClick={handleBookingClick} className="text-lg px-8 shadow-md">
-                Book a Consultation
-              </Button>
-              <Button size="lg" variant="outline" onClick={() => navigate("/doctor-auth")} className="text-lg px-8 border-2 border-primary text-primary">
-                For Doctors
+                Book a Consultant
               </Button>
             </div>
           </motion.div>

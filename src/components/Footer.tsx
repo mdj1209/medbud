@@ -28,11 +28,6 @@ const Footer = () => {
                   Features
                 </a>
               </li>
-              <li>
-                <a href="#doctors" className="text-muted-foreground hover:text-primary transition-smooth text-sm">
-                  For Doctors
-                </a>
-              </li>
             </ul>
           </div>
 
