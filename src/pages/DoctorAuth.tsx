@@ -182,72 +182,52 @@ const DoctorAuth = () => {
         city, state, pincode,
       });
 
-      // 1. Create auth account
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Step 1: Create user + doctor profile via edge function (admin API - auto-confirmed)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/signup`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: email.trim(),
+            password,
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            role: "doctor",
+            doctor_data: {
+              specialization: specialization.trim(),
+              experience_years: parseInt(experienceYears),
+              consultation_fee: parseFloat(consultationFee),
+              bio: bio.trim() || null,
+              education: education.trim(),
+              clinic_name: clinicName.trim(),
+              clinic_address: clinicAddress.trim(),
+              city: city.trim(),
+              state: state.trim(),
+              pincode: pincode.trim() || "",
+            },
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast({ title: "Signup failed", description: result.error || "Something went wrong", variant: "destructive" });
+        return;
+      }
+
+      // Step 2: Sign in immediately
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/doctor-dashboard`,
-          data: { full_name: fullName.trim(), phone: phone.trim() },
-        },
       });
 
-      if (authError) {
-        if (authError.message.includes("already registered")) {
-          toast({ title: "Account exists", description: "This email is already registered. Please login instead.", variant: "destructive" });
-        } else {
-          toast({ title: "Signup failed", description: authError.message, variant: "destructive" });
-        }
+      if (signInError) {
+        toast({ title: "Account created but login failed", description: "Please try logging in manually.", variant: "destructive" });
+        setAuthView("login");
         return;
       }
-
-      if (!authData.user) {
-        toast({ title: "Error", description: "Could not create account.", variant: "destructive" });
-        return;
-      }
-
-      const userId = authData.user.id;
-
-      // 2. Create profile
-      await supabase.from("profiles").insert({
-        id: userId,
-        full_name: fullName.trim(),
-        phone: phone.trim(),
-        role: "doctor",
-      });
-
-      // 3. Create doctor record
-      const { data: doctor, error: doctorError } = await supabase
-        .from("doctors")
-        .insert({
-          user_id: userId,
-          specialization: specialization.trim(),
-          experience_years: parseInt(experienceYears),
-          consultation_fee: parseFloat(consultationFee),
-          bio: bio.trim() || null,
-          education: education.trim(),
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (doctorError) throw doctorError;
-
-      // 4. Create clinic
-      await supabase.from("clinics").insert({
-        doctor_id: doctor.id,
-        clinic_name: clinicName.trim(),
-        address: clinicAddress.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        pincode: pincode.trim() || null,
-      });
-
-      // 5. Add doctor role
-      await supabase.from("user_roles").insert({
-        user_id: userId,
-        role: "doctor",
-      });
 
       toast({ title: "Registration Complete!", description: "Your doctor profile has been created. Redirecting..." });
       navigate("/doctor-dashboard");

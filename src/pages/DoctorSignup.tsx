@@ -39,46 +39,24 @@ const DoctorSignup = () => {
         return;
       }
 
-      // Create doctor profile
-      const { data: doctor, error: doctorError } = await supabase
-        .from("doctors")
-        .insert({
-          user_id: user.id,
-          specialization: formData.specialization,
-          experience_years: parseInt(formData.experience_years),
-          consultation_fee: parseFloat(formData.consultation_fee),
-          bio: formData.bio,
-          education: formData.education,
-          is_active: true
-        })
-        .select()
-        .single();
+      // Create doctor profile via server-side function (bypasses RLS)
+      const { error: rpcError } = await supabase.rpc("create_doctor_profile", {
+        p_user_id: user.id,
+        p_full_name: "",
+        p_phone: "",
+        p_specialization: formData.specialization,
+        p_experience_years: parseInt(formData.experience_years),
+        p_consultation_fee: parseFloat(formData.consultation_fee),
+        p_bio: formData.bio,
+        p_education: formData.education,
+        p_clinic_name: formData.clinic_name,
+        p_clinic_address: formData.clinic_address,
+        p_city: formData.city,
+        p_state: formData.state,
+        p_pincode: formData.pincode || "",
+      });
 
-      if (doctorError) throw doctorError;
-
-      // Create clinic
-      const { error: clinicError } = await supabase
-        .from("clinics")
-        .insert({
-          doctor_id: doctor.id,
-          clinic_name: formData.clinic_name,
-          address: formData.clinic_address,
-          city: formData.city,
-          state: formData.state,
-          pincode: formData.pincode
-        });
-
-      if (clinicError) throw clinicError;
-
-      // Add doctor role
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .insert({
-          user_id: user.id,
-          role: "doctor"
-        });
-
-      if (roleError) throw roleError;
+      if (rpcError) throw rpcError;
 
       toast({ title: "Doctor profile created successfully!" });
       navigate("/dashboard");

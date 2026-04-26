@@ -80,6 +80,117 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          id: string
+          user_id: string
+          type: string
+          title: string
+          message: string
+          metadata: Json | null
+          is_read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          type: string
+          title: string
+          message: string
+          metadata?: Json | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          type?: string
+          title?: string
+          message?: string
+          metadata?: Json | null
+          is_read?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prepone_requests: {
+        Row: {
+          id: string
+          appointment_id: string
+          patient_id: string
+          doctor_id: string
+          requested_date: string
+          requested_time: string
+          original_date: string
+          original_time: string
+          status: string
+          reason: string | null
+          doctor_response: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          appointment_id: string
+          patient_id: string
+          doctor_id: string
+          requested_date: string
+          requested_time: string
+          original_date: string
+          original_time: string
+          status?: string
+          reason?: string | null
+          doctor_response?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          appointment_id?: string
+          patient_id?: string
+          doctor_id?: string
+          requested_date?: string
+          requested_time?: string
+          original_date?: string
+          original_time?: string
+          status?: string
+          reason?: string | null
+          doctor_response?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prepone_requests_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prepone_requests_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prepone_requests_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           address: string

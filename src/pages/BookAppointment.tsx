@@ -424,6 +424,33 @@ const BookAppointment = () => {
         throw tokenError;
       }
 
+      // Notify doctor in real-time
+      try {
+        const { data: doctorData } = await supabase
+          .from("doctors")
+          .select("user_id")
+          .eq("id", selectedDoctor.id)
+          .single();
+
+        if (doctorData) {
+          const { data: patientProfile } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", currentUser.id)
+            .single();
+
+          await supabase.from("notifications").insert({
+            user_id: doctorData.user_id,
+            type: "new_appointment",
+            title: "🔔 New Appointment Booked",
+            message: `${patientProfile?.full_name || "A patient"} booked for ${new Date(selectedDate).toLocaleDateString()} at ${selectedTime}. ${bookingDetails.symptoms ? "Symptoms: " + bookingDetails.symptoms : ""}`,
+            metadata: { appointment_id: newAppointmentId, patient_name: patientProfile?.full_name, symptoms: bookingDetails.symptoms },
+          });
+        }
+      } catch (notifErr) {
+        console.error("Notification error (non-critical):", notifErr);
+      }
+
       setTokenNumber(newTokenNumber);
       setAppointmentId(newAppointmentId);
       setStep(6);

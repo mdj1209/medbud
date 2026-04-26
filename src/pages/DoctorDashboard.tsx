@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { useNotifications } from "@/hooks/useNotifications";
 import {
   Calendar,
   Clock,
@@ -21,12 +23,15 @@ import {
   PlayCircle,
   Search,
   ArrowLeft,
-  Save
+  Save,
+  ArrowUpCircle,
+  Check,
+  X
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail" | "settings";
+type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail" | "settings" | "prepone-requests" | "appointments";
 
 const DoctorDashboard = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,6 +45,9 @@ const DoctorDashboard = () => {
   const [patientRecords, setPatientRecords] = useState<any[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [preponeRequests, setPreponeRequests] = useState<any[]>([]);
+  const notifRef = useRef<HTMLDivElement>(null);
   const [todayStats, setTodayStats] = useState({ total: 0, completed: 0, waiting: 0 });
 
   // For creating/editing records
@@ -54,23 +62,37 @@ const DoctorDashboard = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        fetchDoctorData(session.user.id);
+    let mounted = true;
+
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (mounted) {
+        setSession(session);
+        if (!session) {
+          navigate("/auth");
+        } else {
+          fetchDoctorData(session.user.id);
+        }
+      }
+    };
+    
+    initSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (mounted) {
+        setSession(session);
+        if (event === "SIGNED_OUT") {
+          navigate("/auth");
+        } else if (session) {
+          fetchDoctorData(session.user.id);
+        }
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const fetchDoctorData = async (userId: string) => {
@@ -120,12 +142,17 @@ const DoctorDashboard = () => {
         setTodayStats({ total: tokensData.length, completed, waiting });
       }
 
-      // Fetch today's appointments
+      // Fetch appointments for today + next 7 days with patient details
+      const weekFromNow = new Date();
+      weekFromNow.setDate(weekFromNow.getDate() + 7);
+      const weekEnd = weekFromNow.toISOString().split("T")[0];
       const { data: appointmentsData } = await supabase
         .from("appointments")
-        .select("*")
+        .select("*, profiles:patient_id (full_name, phone)")
         .eq("doctor_id", doctorData.id)
-        .eq("appointment_date", today)
+        .gte("appointment_date", today)
+        .lte("appointment_date", weekEnd)
+        .order("appointment_date", { ascending: true })
         .order("appointment_time", { ascending: true });
 
       if (appointmentsData) setAppointments(appointmentsData);
@@ -159,6 +186,130 @@ const DoctorDashboard = () => {
       setLoading(false);
     }
   };
+
+  // Notifications hook
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(
+    session?.user?.id || null
+  );
+
+  // Fetch prepone requests
+  const fetchPreponeRequests = useCallback(async () => {
+    if (!doctorInfo) return;
+    const { data } = await supabase
+      .from("prepone_requests")
+      .select("*, profiles:patient_id (full_name, phone)")
+      .eq("doctor_id", doctorInfo.id)
+      .order("created_at", { ascending: false });
+    if (data) setPreponeRequests(data);
+  }, [doctorInfo]);
+
+  useEffect(() => {
+    fetchPreponeRequests();
+  }, [fetchPreponeRequests]);
+
+  // Realtime: new tokens for this doctor
+  useRealtimeSubscription({
+    table: "tokens",
+    filter: doctorInfo ? `doctor_id=eq.${doctorInfo.id}` : undefined,
+    enabled: !!doctorInfo,
+    onInsert: () => {
+      if (doctorInfo) fetchDoctorData(session!.user.id);
+      toast({ title: "🔔 New Patient", description: "A new appointment has been booked!" });
+    },
+    onUpdate: () => {
+      if (doctorInfo) fetchDoctorData(session!.user.id);
+    },
+  });
+
+  // Realtime: new prepone requests for this doctor
+  useRealtimeSubscription({
+    table: "prepone_requests",
+    filter: doctorInfo ? `doctor_id=eq.${doctorInfo.id}` : undefined,
+    enabled: !!doctorInfo,
+    onInsert: () => {
+      fetchPreponeRequests();
+      toast({ title: "📋 Prepone Request", description: "A patient has requested to prepone their appointment." });
+    },
+    onUpdate: () => {
+      fetchPreponeRequests();
+    },
+  });
+
+  // Realtime: new/updated appointments for this doctor
+  useRealtimeSubscription({
+    table: "appointments",
+    filter: doctorInfo ? `doctor_id=eq.${doctorInfo.id}` : undefined,
+    enabled: !!doctorInfo,
+    onInsert: () => {
+      if (session) fetchDoctorData(session.user.id);
+      toast({ title: "🆕 New Booking!", description: "A patient just booked an appointment!" });
+    },
+    onUpdate: () => {
+      if (session) fetchDoctorData(session.user.id);
+    },
+  });
+
+  // Close notification dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Handle prepone approve/decline
+  const handlePreponeAction = async (requestId: string, action: "approved" | "declined", request: any) => {
+    try {
+      // Update prepone request status
+      await supabase
+        .from("prepone_requests")
+        .update({ status: action, updated_at: new Date().toISOString() })
+        .eq("id", requestId);
+
+      // If approved, update the appointment date/time
+      if (action === "approved") {
+        await supabase
+          .from("appointments")
+          .update({
+            appointment_date: request.requested_date,
+            appointment_time: request.requested_time,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", request.appointment_id);
+
+        // Also update the token
+        await supabase
+          .from("tokens")
+          .update({
+            token_date: request.requested_date,
+            estimated_time: `${request.requested_date}T${request.requested_time}`,
+          })
+          .eq("appointment_id", request.appointment_id);
+      }
+
+      // Create notification for the patient
+      await supabase.from("notifications").insert({
+        user_id: request.patient_id,
+        type: action === "approved" ? "prepone_approved" : "prepone_declined",
+        title: action === "approved" ? "Prepone Request Approved ✅" : "Prepone Request Declined ❌",
+        message: action === "approved"
+          ? `Your appointment has been moved to ${request.requested_date} at ${request.requested_time}.`
+          : `Your prepone request for ${request.requested_date} was declined by the doctor.`,
+        metadata: { appointment_id: request.appointment_id },
+      });
+
+      toast({ title: "Success", description: `Request ${action} successfully` });
+      fetchPreponeRequests();
+      if (session) fetchDoctorData(session.user.id);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "Failed to process request", variant: "destructive" });
+    }
+  };
+
 
   const handleTokenStatusChange = async (tokenId: string, newStatus: string) => {
     const { error } = await supabase
@@ -270,12 +421,45 @@ const DoctorDashboard = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="w-5 h-5" />
-                {todayStats.waiting > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+              <div className="relative" ref={notifRef}>
+                <Button variant="ghost" size="icon" className="relative" onClick={() => setShowNotifications(!showNotifications)}>
+                  <Bell className="w-5 h-5" />
+                  {(unreadCount > 0 || preponeRequests.filter(r => r.status === "pending").length > 0) && (
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {unreadCount + preponeRequests.filter(r => r.status === "pending").length}
+                    </span>
+                  )}
+                </Button>
+                {showNotifications && (
+                  <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                    <div className="p-3 border-b border-border flex items-center justify-between">
+                      <h4 className="font-semibold text-sm">Notifications</h4>
+                      {unreadCount > 0 && (
+                        <Button variant="ghost" size="sm" className="text-xs h-7" onClick={markAllAsRead}>
+                          Mark all read
+                        </Button>
+                      )}
+                    </div>
+                    <ScrollArea className="max-h-72">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
+                      ) : (
+                        notifications.slice(0, 15).map((n) => (
+                          <div
+                            key={n.id}
+                            className={`p-3 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${!n.is_read ? "bg-primary/5" : ""}`}
+                            onClick={() => { markAsRead(n.id); if (n.type === "prepone_request") setViewMode("prepone-requests"); }}
+                          >
+                            <p className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{n.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                          </div>
+                        ))
+                      )}
+                    </ScrollArea>
+                  </div>
                 )}
-              </Button>
+              </div>
               <Button onClick={handleLogout} variant="ghost" size="sm">
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
@@ -346,15 +530,16 @@ const DoctorDashboard = () => {
 
                 <motion.div
                   whileHover={{ scale: 1.02 }}
+                  onClick={() => setViewMode("appointments")}
                   className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
                 >
                   <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                     <Calendar className="w-7 h-7 text-primary" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">Appointments</h3>
-                  <p className="text-muted-foreground text-sm mb-4">View scheduled appointments</p>
+                  <p className="text-muted-foreground text-sm mb-4">View upcoming 7-day schedule</p>
                   <div className="flex items-center text-primary text-sm font-medium">
-                    {appointments.length} today <ChevronRight className="w-4 h-4 ml-1" />
+                    {appointments.length} upcoming <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
 
@@ -370,6 +555,21 @@ const DoctorDashboard = () => {
                   <p className="text-muted-foreground text-sm mb-4">Configure your UPI number and QR Code</p>
                   <div className="flex items-center text-primary text-sm font-medium">
                     Update Details <ChevronRight className="w-4 h-4 ml-1" />
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => setViewMode("prepone-requests")}
+                  className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4 group-hover:bg-orange-500/20 transition-colors">
+                    <ArrowUpCircle className="w-7 h-7 text-orange-500" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Prepone Requests</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Review patient prepone requests</p>
+                  <div className="flex items-center text-orange-500 text-sm font-medium">
+                    {preponeRequests.filter(r => r.status === "pending").length} pending <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
               </div>
@@ -819,6 +1019,197 @@ const DoctorDashboard = () => {
                   </Button>
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* Prepone Requests View */}
+          {viewMode === "prepone-requests" && (
+            <motion.div
+              key="prepone-requests"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
+            >
+              <h2 className="text-2xl font-bold text-foreground">Prepone Requests</h2>
+              <p className="text-muted-foreground">Review and respond to patient preponing requests</p>
+
+              {preponeRequests.length === 0 ? (
+                <div className="bg-card rounded-xl border border-border p-12 text-center">
+                  <ArrowUpCircle className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">No prepone requests yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {preponeRequests.map((req) => (
+                    <div key={req.id} className={`bg-card rounded-xl border p-5 ${req.status === "pending" ? "border-orange-300 dark:border-orange-700" : "border-border"}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-foreground">{req.profiles?.full_name || "Patient"}</p>
+                          <p className="text-sm text-muted-foreground">{req.profiles?.phone}</p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                          req.status === "pending" ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" :
+                          req.status === "approved" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                          "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        }`}>
+                          {req.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                        <div className="bg-muted/50 rounded-lg p-3">
+                          <p className="text-xs text-muted-foreground mb-1">Original Schedule</p>
+                          <p className="font-medium">{req.original_date}</p>
+                          <p className="text-muted-foreground">{req.original_time}</p>
+                        </div>
+                        <div className="bg-primary/5 rounded-lg p-3 border border-primary/20">
+                          <p className="text-xs text-primary mb-1">Requested Schedule</p>
+                          <p className="font-medium">{req.requested_date}</p>
+                          <p className="text-primary">{req.requested_time}</p>
+                        </div>
+                      </div>
+                      {req.reason && (
+                        <p className="text-sm text-muted-foreground mb-3 bg-muted/30 rounded-lg p-2">
+                          <strong>Reason:</strong> {req.reason}
+                        </p>
+                      )}
+                      {req.status === "pending" && (
+                        <div className="flex gap-2">
+                          <Button size="sm" className="flex-1" onClick={() => handlePreponeAction(req.id, "approved", req)}>
+                            <Check className="w-4 h-4 mr-1" /> Approve
+                          </Button>
+                          <Button size="sm" variant="outline" className="flex-1" onClick={() => handlePreponeAction(req.id, "declined", req)}>
+                            <X className="w-4 h-4 mr-1" /> Decline
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Appointments View */}
+          {viewMode === "appointments" && (
+            <motion.div
+              key="appointments"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
+            >
+              <h2 className="text-2xl font-bold text-foreground">Upcoming Appointments</h2>
+              <p className="text-muted-foreground">Next 7 days — patient details and schedule</p>
+
+              {appointments.length === 0 ? (
+                <div className="bg-card rounded-xl border border-border p-12 text-center">
+                  <Calendar className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">No upcoming appointments</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Group appointments by date */}
+                  {Object.entries(
+                    appointments.reduce((groups: Record<string, any[]>, appt) => {
+                      const date = appt.appointment_date;
+                      if (!groups[date]) groups[date] = [];
+                      groups[date].push(appt);
+                      return groups;
+                    }, {})
+                  ).map(([date, dayAppointments]) => {
+                    const dateObj = new Date(date + "T00:00:00");
+                    const isToday = date === new Date().toISOString().split("T")[0];
+                    const dayName = isToday ? "Today" : dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                    const dateLabel = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+                    return (
+                      <div key={date}>
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
+                            isToday ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                          }`}>
+                            {dayName}
+                          </div>
+                          <span className="text-sm text-muted-foreground">{dateLabel}</span>
+                          <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
+                            {(dayAppointments as any[]).length} appointment{(dayAppointments as any[]).length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(dayAppointments as any[]).map((appt: any) => (
+                            <div
+                              key={appt.id}
+                              className={`bg-card rounded-xl border p-5 transition-all ${
+                                isToday ? "border-primary/30 shadow-md" : "border-border shadow-soft"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-center gap-4">
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm ${
+                                    appt.status === "completed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                                    appt.status === "confirmed" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                    appt.status === "cancelled" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                                    "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                  }`}>
+                                    <Clock className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-foreground text-base">
+                                      {appt.profiles?.full_name || appt.patient_name || "Walk-in Patient"}
+                                    </p>
+                                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                      {(appt.profiles?.phone || appt.patient_phone) && (
+                                        <span>📱 {appt.profiles?.phone || appt.patient_phone}</span>
+                                      )}
+                                      {appt.patient_email && (
+                                        <span>✉️ {appt.patient_email}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-lg font-bold text-foreground">
+                                    {appt.appointment_time?.slice(0, 5)}
+                                  </p>
+                                  <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium mt-1 ${
+                                    appt.status === "completed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                                    appt.status === "confirmed" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                                    appt.status === "cancelled" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                                    "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                  }`}>
+                                    {appt.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {appt.symptoms && (
+                                <div className="mt-3 pt-3 border-t border-border">
+                                  <p className="text-sm text-muted-foreground">
+                                    <span className="font-medium text-foreground">Symptoms:</span> {appt.symptoms}
+                                  </p>
+                                </div>
+                              )}
+
+                              {appt.payment_method && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span className="bg-muted px-2 py-0.5 rounded">💳 {appt.payment_method}</span>
+                                  <span className={`px-2 py-0.5 rounded ${
+                                    appt.payment_status === "completed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-700"
+                                  }`}>
+                                    {appt.payment_status || "pending"}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

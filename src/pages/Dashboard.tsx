@@ -16,29 +16,40 @@ const Dashboard = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    let mounted = true;
+
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        fetchUserData(session.user.id);
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (mounted) {
+        setSession(session);
+        if (!session) {
+          navigate("/auth");
+        } else {
+          fetchUserData(session.user.id);
+        }
       }
-    });
+    };
+    initSession();
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        fetchUserData(session.user.id);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (mounted) {
+        setSession(session);
+        if (event === "SIGNED_OUT") {
+          navigate("/auth");
+        } else if (session) {
+          fetchUserData(session.user.id);
+        }
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const fetchUserData = async (userId: string) => {

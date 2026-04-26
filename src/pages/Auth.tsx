@@ -100,66 +100,56 @@ const Auth = () => {
     try {
       const validatedData = signupSchema.parse({ email, password, fullName, phone });
       
-      const { data, error } = await supabase.auth.signUp({
-        email: validatedData.email,
-        password: validatedData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-          data: {
+      // Step 1: Create user via edge function (admin API - auto-confirmed, no email sent)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/signup`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: validatedData.email,
+            password: validatedData.password,
             full_name: validatedData.fullName,
             phone: validatedData.phone,
-          },
-        },
-      });
-
-      if (error) {
-        if (error.message.includes("already registered")) {
-          toast({
-            title: "Account exists",
-            description: "This email is already registered. Please login instead.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Signup failed",
-            description: error.message,
-            variant: "destructive",
-          });
+            role: "patient",
+          }),
         }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast({
+          title: "Signup failed",
+          description: result.error || "Something went wrong",
+          variant: "destructive",
+        });
         return;
       }
 
-      if (data.user) {
-        // Create profile
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .insert({
-            id: data.user.id,
-            full_name: validatedData.fullName,
-            phone: validatedData.phone,
-            role: "patient",
-          });
+      // Step 2: Sign in immediately with the new credentials
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: validatedData.email,
+        password: validatedData.password,
+      });
 
-        if (profileError) {
-          console.error("Profile creation error:", profileError);
-        }
-
-        // Create patient role
-        await supabase
-          .from("user_roles")
-          .insert({
-            user_id: data.user.id,
-            role: "patient",
-          });
-
+      if (signInError) {
         toast({
-          title: "Success!",
-          description: "Account created successfully. Redirecting...",
+          title: "Account created but login failed",
+          description: "Please try logging in manually.",
+          variant: "destructive",
         });
-        const params = new URLSearchParams(window.location.search);
-        const returnTo = params.get("returnTo");
-        navigate(returnTo || "/patient-dashboard");
+        setAuthView("login");
+        return;
       }
+
+      toast({
+        title: "Success!",
+        description: "Account created successfully. Redirecting...",
+      });
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo");
+      navigate(returnTo || "/patient-dashboard");
     } catch (error) {
       if (error instanceof z.ZodError) {
         toast({

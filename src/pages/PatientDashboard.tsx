@@ -1,21 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { useNotifications } from "@/hooks/useNotifications";
 import {
-  Calendar,
-  Clock,
-  FileText,
-  LogOut,
-  User,
-  Bot,
-  ChevronRight,
-  Stethoscope,
-  Bell
+  Calendar, Clock, FileText, LogOut, User, Bot, ChevronRight,
+  Stethoscope, Bell, ArrowUpCircle, X
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import AIHealthAssistant from "@/components/AIHealthAssistant";
 
 const PatientDashboard = () => {
@@ -26,106 +23,91 @@ const PatientDashboard = () => {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [tokens, setTokens] = useState<any[]>([]);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showPreponeModal, setShowPreponeModal] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [preponeDate, setPreponeDate] = useState("");
+  const [preponeTime, setPreponeTime] = useState("");
+  const [preponeReason, setPreponeReason] = useState("");
+  const [preponeLoading, setPreponeLoading] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        fetchUserData(session.user.id);
+    let mounted = true;
+
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (mounted) {
+        setSession(session);
+        if (!session) {
+          navigate("/auth");
+        } else {
+          fetchUserData(session.user.id);
+        }
+      }
+    };
+    initSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (mounted) {
+        setSession(session);
+        if (event === "SIGNED_OUT") {
+          navigate("/auth");
+        } else if (session) {
+          fetchUserData(session.user.id);
+        }
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        fetchUserData(session.user.id);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const fetchUserData = async (userId: string) => {
     try {
-      // Fetch profile
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
+      const { data: profileData, error: profileError } = await supabase.from("profiles").select("*").eq("id", userId).single();
       if (profileError) throw profileError;
       setProfile(profileData);
 
-      // Fetch user roles
-      const { data: rolesData, error: rolesError } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId);
-
+      const { data: rolesData, error: rolesError } = await supabase.from("user_roles").select("role").eq("user_id", userId);
       if (rolesError) throw rolesError;
       setUserRoles(rolesData.map((r) => r.role));
 
-      // Fetch upcoming appointments
       const { data: appointmentsData } = await supabase
         .from("appointments")
-        .select(`
-          *,
-          doctors:doctor_id (
-            specialization,
-            profiles:user_id (full_name)
-          )
-        `)
+        .select(`*, doctors:doctor_id (id, specialization, profiles:user_id (full_name))`)
         .eq("patient_id", userId)
         .gte("appointment_date", new Date().toISOString().split("T")[0])
         .order("appointment_date", { ascending: true })
-        .limit(5);
+        .limit(10);
 
       if (appointmentsData) {
-        const transformedAppointments = appointmentsData.map((apt) => ({
+        const transformed = appointmentsData.map((apt) => ({
           ...apt,
-          doctors: {
-            ...apt.doctors,
-            profiles: Array.isArray(apt.doctors?.profiles)
-              ? apt.doctors.profiles[0]
-              : apt.doctors?.profiles
-          }
+          doctors: { ...apt.doctors, profiles: Array.isArray(apt.doctors?.profiles) ? apt.doctors.profiles[0] : apt.doctors?.profiles }
         }));
-        setAppointments(transformedAppointments);
+        setAppointments(transformed);
       }
 
-      // Fetch active tokens
       const { data: tokensData } = await supabase
         .from("tokens")
-        .select(`
-          *,
-          doctors:doctor_id (
-            specialization,
-            profiles:user_id (full_name)
-          )
-        `)
+        .select(`*, doctors:doctor_id (specialization, profiles:user_id (full_name))`)
         .eq("patient_id", userId)
-        .eq("status", "waiting")
+        .in("status", ["waiting", "in_progress"])
         .order("token_date", { ascending: true })
         .limit(5);
 
       if (tokensData) {
-        const transformedTokens = tokensData.map((token) => ({
+        const transformed = tokensData.map((token) => ({
           ...token,
-          doctors: {
-            ...token.doctors,
-            profiles: Array.isArray(token.doctors?.profiles)
-              ? token.doctors.profiles[0]
-              : token.doctors?.profiles
-          }
+          doctors: { ...token.doctors, profiles: Array.isArray(token.doctors?.profiles) ? token.doctors.profiles[0] : token.doctors?.profiles }
         }));
-        setTokens(transformedTokens);
+        setTokens(transformed);
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
@@ -134,22 +116,144 @@ const PatientDashboard = () => {
     }
   };
 
+  // Notifications hook
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(session?.user?.id || null);
+
+  // Realtime: appointment updates
+  useRealtimeSubscription({
+    table: "appointments",
+    filter: session ? `patient_id=eq.${session.user.id}` : undefined,
+    enabled: !!session,
+    onChange: () => { if (session) fetchUserData(session.user.id); },
+  });
+
+  // Realtime: token updates
+  useRealtimeSubscription({
+    table: "tokens",
+    filter: session ? `patient_id=eq.${session.user.id}` : undefined,
+    enabled: !!session,
+    onUpdate: (payload) => {
+      const newStatus = payload.new?.status;
+      if (newStatus === "in_progress") {
+        toast({ title: "🔔 Your turn!", description: "The doctor is ready to see you now." });
+      }
+      if (session) fetchUserData(session.user.id);
+    },
+    onInsert: () => { if (session) fetchUserData(session.user.id); },
+  });
+
+  // Close notification dropdown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Fetch available earlier slots for preponing
+  const fetchAvailableSlots = useCallback(async (apt: any) => {
+    if (!apt) return;
+    const today = new Date().toISOString().split("T")[0];
+    // Get all booked times for this doctor between today and the appointment date
+    const { data: bookedTokens } = await supabase
+      .from("tokens")
+      .select("token_date, estimated_time")
+      .eq("doctor_id", apt.doctor_id)
+      .gte("token_date", today)
+      .lt("token_date", apt.appointment_date)
+      .in("status", ["waiting", "in_progress"]);
+
+    const bookedSet = new Set((bookedTokens || []).map(t => `${t.token_date}|${t.estimated_time?.split("T")[1]?.substring(0,5)}`));
+
+    // Generate available slots for dates before appointment
+    const slots: string[] = [];
+    const aptDate = new Date(apt.appointment_date);
+    const startDate = new Date(today);
+    // Only allow dates starting from tomorrow
+    startDate.setDate(startDate.getDate() + 1);
+
+    for (let d = new Date(startDate); d < aptDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split("T")[0];
+      for (let h = 9; h < 18; h++) {
+        for (const m of [0, 30]) {
+          const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+          const key = `${dateStr}|${timeStr}`;
+          if (!bookedSet.has(key)) {
+            slots.push(`${dateStr} ${timeStr}`);
+          }
+        }
+      }
+    }
+    setAvailableSlots(slots);
+  }, []);
+
+  const openPreponeModal = (apt: any) => {
+    setSelectedAppointment(apt);
+    setPreponeDate("");
+    setPreponeTime("");
+    setPreponeReason("");
+    fetchAvailableSlots(apt);
+    setShowPreponeModal(true);
+  };
+
+  const handlePreponeSubmit = async () => {
+    if (!preponeDate || !preponeTime || !selectedAppointment || !session) {
+      toast({ title: "Please select a date and time", variant: "destructive" });
+      return;
+    }
+    setPreponeLoading(true);
+    try {
+      // Create prepone request
+      await supabase.from("prepone_requests").insert({
+        appointment_id: selectedAppointment.id,
+        patient_id: session.user.id,
+        doctor_id: selectedAppointment.doctors?.id || selectedAppointment.doctor_id,
+        requested_date: preponeDate,
+        requested_time: preponeTime,
+        original_date: selectedAppointment.appointment_date,
+        original_time: selectedAppointment.appointment_time,
+        reason: preponeReason || null,
+      });
+
+      // Find the doctor's user_id for notification
+      const { data: doctorData } = await supabase
+        .from("doctors")
+        .select("user_id")
+        .eq("id", selectedAppointment.doctors?.id || selectedAppointment.doctor_id)
+        .single();
+
+      if (doctorData) {
+        await supabase.from("notifications").insert({
+          user_id: doctorData.user_id,
+          type: "prepone_request",
+          title: "📋 Prepone Request",
+          message: `${profile?.full_name || "A patient"} wants to move their appointment from ${selectedAppointment.appointment_date} to ${preponeDate} at ${preponeTime}.`,
+          metadata: { appointment_id: selectedAppointment.id, patient_name: profile?.full_name },
+        });
+      }
+
+      toast({ title: "Request Sent!", description: "Your prepone request has been sent to the doctor." });
+      setShowPreponeModal(false);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "Failed to submit request", variant: "destructive" });
+    } finally {
+      setPreponeLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to logout. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to logout.", variant: "destructive" });
     } else {
-      toast({
-        title: "Logged out",
-        description: "You have been logged out successfully.",
-      });
+      toast({ title: "Logged out", description: "You have been logged out successfully." });
       navigate("/");
     }
   };
+
+  // Get unique dates from available slots
+  const uniqueDates = [...new Set(availableSlots.map(s => s.split(" ")[0]))];
+  const timesForDate = availableSlots.filter(s => s.startsWith(preponeDate)).map(s => s.split(" ")[1]);
 
   if (loading) {
     return (
@@ -178,12 +282,39 @@ const PatientDashboard = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="w-5 h-5" />
-                {tokens.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+              <div className="relative" ref={notifRef}>
+                <Button variant="ghost" size="icon" className="relative" onClick={() => setShowNotifications(!showNotifications)}>
+                  <Bell className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {unreadCount}
+                    </span>
+                  )}
+                </Button>
+                {showNotifications && (
+                  <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                    <div className="p-3 border-b border-border flex items-center justify-between">
+                      <h4 className="font-semibold text-sm">Notifications</h4>
+                      {unreadCount > 0 && (
+                        <Button variant="ghost" size="sm" className="text-xs h-7" onClick={markAllAsRead}>Mark all read</Button>
+                      )}
+                    </div>
+                    <ScrollArea className="max-h-72">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
+                      ) : (
+                        notifications.slice(0, 15).map((n) => (
+                          <div key={n.id} className={`p-3 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 ${!n.is_read ? "bg-primary/5" : ""}`} onClick={() => markAsRead(n.id)}>
+                            <p className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{n.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                          </div>
+                        ))
+                      )}
+                    </ScrollArea>
+                  </div>
                 )}
-              </Button>
+              </div>
               <Button onClick={handleLogout} variant="ghost" size="sm">
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
@@ -195,138 +326,82 @@ const PatientDashboard = () => {
 
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - User Info & Quick Actions */}
+          {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
             {/* Profile Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-card rounded-xl shadow-soft p-6 border border-border"
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl shadow-soft p-6 border border-border">
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-gradient-primary flex items-center justify-center">
                   <User className="w-8 h-8 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-foreground">
-                    {profile?.full_name || "Patient"}
-                  </h2>
+                  <h2 className="text-2xl font-bold text-foreground">{profile?.full_name || "Patient"}</h2>
                   <p className="text-muted-foreground text-sm">{session?.user.email}</p>
                   <div className="flex gap-2 mt-2">
                     {userRoles.map((role) => (
-                      <span
-                        key={role}
-                        className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary capitalize"
-                      >
-                        {role}
-                      </span>
+                      <span key={role} className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary capitalize">{role}</span>
                     ))}
                   </div>
                 </div>
-                <Button
-                  onClick={() => setShowAIAssistant(!showAIAssistant)}
-                  className="hidden md:flex"
-                  variant={showAIAssistant ? "secondary" : "default"}
-                >
-                  <Bot className="w-4 h-4 mr-2" />
-                  AI Assistant
+                <Button onClick={() => setShowAIAssistant(!showAIAssistant)} className="hidden md:flex" variant={showAIAssistant ? "secondary" : "default"}>
+                  <Bot className="w-4 h-4 mr-2" /> AI Assistant
                 </Button>
               </div>
             </motion.div>
 
             {/* Quick Actions */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="grid grid-cols-2 md:grid-cols-4 gap-4"
-            >
-              <Button
-                variant="outline"
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => navigate("/book-appointment")}
-              >
-                <Calendar className="w-6 h-6 text-primary" />
-                <span className="text-xs">Book Appointment</span>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => navigate("/book-appointment")}>
+                <Calendar className="w-6 h-6 text-primary" /><span className="text-xs">Book Appointment</span>
               </Button>
-              <Button
-                variant="outline"
-                className="h-auto py-4 flex flex-col gap-2"
-                onClick={() => setShowAIAssistant(true)}
-              >
-                <Bot className="w-6 h-6 text-primary" />
-                <span className="text-xs">AI Health Help</span>
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAIAssistant(true)}>
+                <Bot className="w-6 h-6 text-primary" /><span className="text-xs">AI Health Help</span>
               </Button>
-              <Button
-                variant="outline"
-                className="h-auto py-4 flex flex-col gap-2"
-              >
-                <FileText className="w-6 h-6 text-primary" />
-                <span className="text-xs">My Records</span>
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+                <FileText className="w-6 h-6 text-primary" /><span className="text-xs">My Records</span>
               </Button>
-              <Button
-                variant="outline"
-                className="h-auto py-4 flex flex-col gap-2"
-              >
-                <Clock className="w-6 h-6 text-primary" />
-                <span className="text-xs">Token Status</span>
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+                <Clock className="w-6 h-6 text-primary" /><span className="text-xs">Token Status</span>
               </Button>
             </motion.div>
 
             {/* Upcoming Appointments */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-card rounded-xl shadow-soft border border-border overflow-hidden"
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
               <div className="p-4 border-b border-border flex items-center justify-between">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-primary" />
-                  Upcoming Appointments
+                  <Calendar className="w-5 h-5 text-primary" /> Upcoming Appointments
                 </h3>
-                <Button variant="ghost" size="sm">
-                  View All <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
               </div>
               <div className="divide-y divide-border">
                 {appointments.length === 0 ? (
                   <div className="p-6 text-center text-muted-foreground">
                     <Calendar className="w-10 h-10 mx-auto mb-2 opacity-50" />
                     <p>No upcoming appointments</p>
-                    <Button
-                      variant="link"
-                      className="mt-2"
-                      onClick={() => navigate("/book-appointment")}
-                    >
-                      Book your first appointment
-                    </Button>
+                    <Button variant="link" className="mt-2" onClick={() => navigate("/book-appointment")}>Book your first appointment</Button>
                   </div>
                 ) : (
                   appointments.map((apt) => (
                     <div key={apt.id} className="p-4 hover:bg-muted/50 transition-colors">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium text-foreground">
-                            Dr. {apt.doctors?.profiles?.full_name || "Unknown"}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {apt.doctors?.specialization}
-                          </p>
+                          <p className="font-medium text-foreground">Dr. {apt.doctors?.profiles?.full_name || "Unknown"}</p>
+                          <p className="text-sm text-muted-foreground">{apt.doctors?.specialization}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium text-foreground">
-                            {new Date(apt.appointment_date).toLocaleDateString()}
-                          </p>
+                          <p className="font-medium text-foreground">{new Date(apt.appointment_date).toLocaleDateString()}</p>
                           <p className="text-sm text-muted-foreground">{apt.appointment_time}</p>
                         </div>
                       </div>
-                      <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${apt.status === "confirmed"
-                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                          : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                        }`}>
-                        {apt.status}
-                      </span>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className={`inline-block px-2 py-0.5 text-xs rounded-full ${
+                          apt.status === "confirmed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                        }`}>{apt.status}</span>
+                        {apt.status === "confirmed" && new Date(apt.appointment_date) > new Date() && (
+                          <Button size="sm" variant="outline" className="text-xs h-7 gap-1 text-orange-600 border-orange-300 hover:bg-orange-50" onClick={() => openPreponeModal(apt)}>
+                            <ArrowUpCircle className="w-3.5 h-3.5" /> Request Prepone
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -334,44 +409,31 @@ const PatientDashboard = () => {
             </motion.div>
 
             {/* Active Tokens */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="bg-card rounded-xl shadow-soft border border-border overflow-hidden"
-            >
-              <div className="p-4 border-b border-border flex items-center justify-between">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
+              <div className="p-4 border-b border-border">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-primary" />
-                  Active Tokens
+                  <Clock className="w-5 h-5 text-primary" /> Active Tokens
                 </h3>
               </div>
               <div className="divide-y divide-border">
                 {tokens.length === 0 ? (
                   <div className="p-6 text-center text-muted-foreground">
-                    <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                    <p>No active tokens</p>
+                    <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" /><p>No active tokens</p>
                   </div>
                 ) : (
                   tokens.map((token) => (
                     <div key={token.id} className="p-4 hover:bg-muted/50 transition-colors">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium text-foreground">
-                            Token #{token.token_number}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Dr. {token.doctors?.profiles?.full_name || "Unknown"} - {token.doctors?.specialization}
-                          </p>
+                          <p className="font-medium text-foreground">Token #{token.token_number}</p>
+                          <p className="text-sm text-muted-foreground">Dr. {token.doctors?.profiles?.full_name || "Unknown"} - {token.doctors?.specialization}</p>
                         </div>
                         <div className="text-right">
-                          <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                            {token.status}
-                          </span>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            token.status === "in_progress" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 animate-pulse" : "bg-primary/10 text-primary"
+                          }`}>{token.status === "in_progress" ? "Your Turn!" : token.status}</span>
                           {token.estimated_time && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Est. {new Date(token.estimated_time).toLocaleTimeString()}
-                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">Est. {new Date(token.estimated_time).toLocaleTimeString()}</p>
                           )}
                         </div>
                       </div>
@@ -383,41 +445,86 @@ const PatientDashboard = () => {
           </div>
 
           {/* Right Column - AI Assistant */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className={`${showAIAssistant ? "block" : "hidden lg:block"} lg:sticky lg:top-24 h-[calc(100vh-120px)]`}
-          >
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className={`${showAIAssistant ? "block" : "hidden lg:block"} lg:sticky lg:top-24 h-[calc(100vh-120px)]`}>
             <AIHealthAssistant />
           </motion.div>
         </div>
 
-        {/* Mobile AI Assistant Toggle */}
+        {/* Mobile AI Toggle */}
         <div className="fixed bottom-6 right-6 lg:hidden">
-          <Button
-            onClick={() => setShowAIAssistant(!showAIAssistant)}
-            size="lg"
-            className="rounded-full w-14 h-14 shadow-lg"
-          >
+          <Button onClick={() => setShowAIAssistant(!showAIAssistant)} size="lg" className="rounded-full w-14 h-14 shadow-lg">
             <Bot className="w-6 h-6" />
           </Button>
         </div>
 
-        {/* Mobile AI Assistant Modal */}
+        {/* Mobile AI Modal */}
         {showAIAssistant && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <div
-              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-              onClick={() => setShowAIAssistant(false)}
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              className="absolute bottom-0 left-0 right-0 h-[80vh] bg-card rounded-t-2xl overflow-hidden"
-            >
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowAIAssistant(false)} />
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute bottom-0 left-0 right-0 h-[80vh] bg-card rounded-t-2xl overflow-hidden">
               <AIHealthAssistant />
+            </motion.div>
+          </div>
+        )}
+
+        {/* Prepone Request Modal */}
+        {showPreponeModal && selectedAppointment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowPreponeModal(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-md p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-foreground">Request Prepone</h3>
+                <Button variant="ghost" size="icon" onClick={() => setShowPreponeModal(false)}><X className="w-5 h-5" /></Button>
+              </div>
+
+              <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                <p className="text-muted-foreground">Current: <strong>{selectedAppointment.appointment_date}</strong> at <strong>{selectedAppointment.appointment_time}</strong></p>
+                <p className="text-muted-foreground">Dr. {selectedAppointment.doctors?.profiles?.full_name}</p>
+              </div>
+
+              {availableSlots.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Calendar className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p>No earlier slots available</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">Select Date</label>
+                    <div className="grid grid-cols-3 gap-2 max-h-28 overflow-y-auto">
+                      {uniqueDates.map((d) => (
+                        <button key={d} onClick={() => { setPreponeDate(d); setPreponeTime(""); }}
+                          className={`p-2 rounded-lg text-xs border transition-all ${preponeDate === d ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border hover:border-primary/50"}`}>
+                          {new Date(d).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {preponeDate && (
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-2 block">Select Time</label>
+                      <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto">
+                        {timesForDate.map((t) => (
+                          <button key={t} onClick={() => setPreponeTime(t)}
+                            className={`p-2 rounded-lg text-xs border transition-all ${preponeTime === t ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border hover:border-primary/50"}`}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-2 block">Reason (optional)</label>
+                    <Textarea placeholder="Why do you need to prepone?" value={preponeReason} onChange={(e) => setPreponeReason(e.target.value)} rows={2} />
+                  </div>
+
+                  <Button className="w-full" disabled={!preponeDate || !preponeTime || preponeLoading} onClick={handlePreponeSubmit}>
+                    {preponeLoading ? "Sending..." : "Send Prepone Request"}
+                  </Button>
+                </>
+              )}
             </motion.div>
           </div>
         )}
