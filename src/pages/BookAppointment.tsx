@@ -186,13 +186,29 @@ const BookAppointment = () => {
     const startHour = 9;
     const endHour = 18;
     
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const isToday = selectedDate === today;
+    // Current time in minutes with a 30-minute buffer so patients can't book slots that are about to pass
+    const currentMinutes = isToday ? now.getHours() * 60 + now.getMinutes() + 30 : 0;
+    
     for (let hour = startHour; hour < endHour; hour++) {
       for (let minute of [0, 30]) {
         const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        slots.push({ time, available: true });
+        const slotMinutes = hour * 60 + minute;
+        // Slot is unavailable if it's in the past for today
+        const isPast = isToday && slotMinutes < currentMinutes;
+        slots.push({ time, available: !isPast });
       }
     }
     setTimeSlots(slots);
+    // Clear selected time if it's now in the past
+    if (isToday && selectedTime) {
+      const [h, m] = selectedTime.split(':').map(Number);
+      if (h * 60 + m < currentMinutes) {
+        setSelectedTime('');
+      }
+    }
   };
 
   const handleClinicSelect = (clinic: Clinic) => {
@@ -1444,8 +1460,8 @@ const BookAppointment = () => {
                     <Download className="mr-2 h-5 w-5" />
                     Download PDF Receipt
                   </Button>
-                  <Button onClick={() => navigate("/")} variant="outline" size="lg">
-                    Back to Home
+                  <Button onClick={() => navigate("/patient-dashboard")} variant="outline" size="lg">
+                    Go to Dashboard
                   </Button>
                 </motion.div>
               </motion.div>

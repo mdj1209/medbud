@@ -31,6 +31,10 @@ const PatientDashboard = () => {
   const [preponeTime, setPreponeTime] = useState("");
   const [preponeReason, setPreponeReason] = useState("");
   const [preponeLoading, setPreponeLoading] = useState(false);
+  const [patientRecords, setPatientRecords] = useState<any[]>([]);
+  const [showRecordsModal, setShowRecordsModal] = useState(false);
+  const [showQueueModal, setShowQueueModal] = useState(false);
+  const [queueData, setQueueData] = useState<any[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -80,34 +84,89 @@ const PatientDashboard = () => {
 
       const { data: appointmentsData } = await supabase
         .from("appointments")
-        .select(`*, doctors:doctor_id (id, specialization, profiles:user_id (full_name))`)
+        .select(`*, doctors:doctor_id (id, specialization, user_id)`)
         .eq("patient_id", userId)
         .gte("appointment_date", new Date().toISOString().split("T")[0])
         .order("appointment_date", { ascending: true })
         .limit(10);
 
-      if (appointmentsData) {
-        const transformed = appointmentsData.map((apt) => ({
-          ...apt,
-          doctors: { ...apt.doctors, profiles: Array.isArray(apt.doctors?.profiles) ? apt.doctors.profiles[0] : apt.doctors?.profiles }
-        }));
-        setAppointments(transformed);
-      }
-
       const { data: tokensData } = await supabase
         .from("tokens")
-        .select(`*, doctors:doctor_id (specialization, profiles:user_id (full_name))`)
+        .select(`*, doctors:doctor_id (id, specialization, user_id)`)
         .eq("patient_id", userId)
         .in("status", ["waiting", "in_progress"])
         .order("token_date", { ascending: true })
         .limit(5);
 
-      if (tokensData) {
-        const transformed = tokensData.map((token) => ({
-          ...token,
-          doctors: { ...token.doctors, profiles: Array.isArray(token.doctors?.profiles) ? token.doctors.profiles[0] : token.doctors?.profiles }
+      // Fetch patient records
+      const { data: recordsData } = await supabase
+        .from("patient_records")
+        .select(`*, doctors:doctor_id (id, user_id), tokens:token_id (token_number, token_date)`)
+        .eq("patient_id", userId)
+        .order("created_at", { ascending: false });
+
+      // Gather all doctor user_ids to fetch profiles manually
+      const doctorUserIds = new Set<string>();
+      const addDocId = (doc: any) => {
+        if (doc) {
+          const d = Array.isArray(doc) ? doc[0] : doc;
+          if (d && d.user_id) doctorUserIds.add(d.user_id);
+        }
+      };
+      
+      appointmentsData?.forEach(a => addDocId(a.doctors));
+      tokensData?.forEach(t => addDocId(t.doctors));
+      recordsData?.forEach(r => addDocId(r.doctors));
+
+      const { data: docProfiles } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", Array.from(doctorUserIds));
+
+      const docProfileMap = new Map();
+      docProfiles?.forEach(p => docProfileMap.set(p.id, p));
+
+      if (appointmentsData) {
+        setAppointments(appointmentsData.map((apt) => {
+          const doc = Array.isArray(apt.doctors) ? apt.doctors[0] : apt.doctors;
+          return {
+            ...apt,
+            doctors: { ...doc, profiles: docProfileMap.get(doc?.user_id) }
+          };
         }));
-        setTokens(transformed);
+      }
+
+      if (tokensData) {
+        setTokens(tokensData.map((token) => {
+          const doc = Array.isArray(token.doctors) ? token.doctors[0] : token.doctors;
+          return {
+            ...token,
+            doctors: { ...doc, profiles: docProfileMap.get(doc?.user_id) }
+          };
+        }));
+        
+        // Fetch queue data for the first active token's doctor to show Token Status
+        if (tokensData.length > 0) {
+          const docId = tokensData[0].doctor_id;
+          const today = new Date().toISOString().split("T")[0];
+          const { data: qData } = await supabase
+            .from("tokens")
+            .select("*")
+            .eq("doctor_id", docId)
+            .eq("token_date", today)
+            .order("token_number", { ascending: true });
+          if (qData) setQueueData(qData);
+        }
+      }
+
+      if (recordsData) {
+        setPatientRecords(recordsData.map(r => {
+          const doc = Array.isArray(r.doctors) ? r.doctors[0] : r.doctors;
+          return {
+            ...r,
+            doctors: { ...doc, profiles: docProfileMap.get(doc?.user_id) }
+          };
+        }));
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
@@ -357,10 +416,10 @@ const PatientDashboard = () => {
               <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAIAssistant(true)}>
                 <Bot className="w-6 h-6 text-primary" /><span className="text-xs">AI Health Help</span>
               </Button>
-              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowRecordsModal(true)}>
                 <FileText className="w-6 h-6 text-primary" /><span className="text-xs">My Records</span>
               </Button>
-              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2">
+              <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowQueueModal(true)}>
                 <Clock className="w-6 h-6 text-primary" /><span className="text-xs">Token Status</span>
               </Button>
             </motion.div>
@@ -408,11 +467,11 @@ const PatientDashboard = () => {
               </div>
             </motion.div>
 
-            {/* Active Tokens */}
+            {/* Active Appointments */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
               <div className="p-4 border-b border-border">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-primary" /> Active Tokens
+                  <Clock className="w-5 h-5 text-primary" /> Active Appointments
                 </h3>
               </div>
               <div className="divide-y divide-border">
@@ -525,6 +584,141 @@ const PatientDashboard = () => {
                   </Button>
                 </>
               )}
+            </motion.div>
+          </div>
+        )}
+
+        {/* My Records Modal */}
+        {showRecordsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowRecordsModal(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="text-lg font-bold text-foreground">My Medical Records</h3>
+                <Button variant="ghost" size="icon" onClick={() => setShowRecordsModal(false)}><X className="w-5 h-5" /></Button>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                {patientRecords.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No medical records found</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {patientRecords.map((record) => (
+                      <div key={record.id} className="p-4 rounded-xl border border-border bg-muted/30">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-semibold">Dr. {record.doctors?.profiles?.full_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(record.created_at).toLocaleDateString()}
+                              {record.tokens && ` • Token #${record.tokens.token_number}`}
+                            </p>
+                          </div>
+                        </div>
+                        {record.diagnosis && (
+                          <div className="mb-2">
+                            <p className="text-xs font-medium text-muted-foreground uppercase">Diagnosis</p>
+                            <p className="text-sm">{record.diagnosis}</p>
+                          </div>
+                        )}
+                        {record.prescription && (
+                          <div className="mb-2">
+                            <p className="text-xs font-medium text-muted-foreground uppercase">Prescription</p>
+                            <p className="text-sm whitespace-pre-wrap">{record.prescription}</p>
+                          </div>
+                        )}
+                        {record.notes && (
+                          <div className="mb-2">
+                            <p className="text-xs font-medium text-muted-foreground uppercase">Doctor's Notes</p>
+                            <p className="text-sm">{record.notes}</p>
+                          </div>
+                        )}
+                        {record.attachments && (record.attachments as string[]).length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Attachments</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {(record.attachments as string[]).map((img, i) => (
+                                <img key={i} src={img} alt={`Attachment ${i + 1}`} className="w-full h-20 object-cover rounded-lg border border-border cursor-pointer hover:opacity-80" onClick={() => window.open(img, '_blank')} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Token Status / Current Queue Modal */}
+        {showQueueModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowQueueModal(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="text-lg font-bold text-foreground">Current Queue</h3>
+                <Button variant="ghost" size="icon" onClick={() => setShowQueueModal(false)}><X className="w-5 h-5" /></Button>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                {queueData.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No active queue for your doctors today.</p>
+                    <p className="text-sm mt-2">Book an appointment to get a token.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-primary/5 rounded-lg mb-4 border border-primary/20">
+                      <div className="text-center flex-1 border-r border-border">
+                        <p className="text-2xl font-bold text-primary">{queueData.filter(t => t.status === "completed").length}</p>
+                        <p className="text-xs text-muted-foreground">Completed</p>
+                      </div>
+                      <div className="text-center flex-1">
+                        <p className="text-2xl font-bold text-yellow-600">{queueData.filter(t => t.status === "waiting" || t.status === "in_progress").length}</p>
+                        <p className="text-xs text-muted-foreground">Waiting</p>
+                      </div>
+                    </div>
+                    
+                    <h4 className="font-medium text-sm mb-2 px-1">Today's Token Queue</h4>
+                    {queueData.map((token) => {
+                      const isMyToken = tokens.some(t => t.id === token.id);
+                      return (
+                        <div key={token.id} className={`p-3 rounded-xl border flex items-center justify-between ${
+                          isMyToken ? 'bg-primary/10 border-primary shadow-sm' : 'bg-card border-border'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                              token.status === "in_progress" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                              token.status === "completed" ? "bg-muted text-muted-foreground" :
+                              isMyToken ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                            }`}>
+                              {token.token_number}
+                            </div>
+                            <div>
+                              <p className={`font-medium ${isMyToken ? 'text-primary' : 'text-foreground'}`}>
+                                {isMyToken ? "Your Token" : `Token #${token.token_number}`}
+                              </p>
+                              {token.estimated_time && token.status !== "completed" && (
+                                <p className="text-xs text-muted-foreground">Est. {new Date(token.estimated_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${
+                            token.status === "in_progress" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                            token.status === "completed" ? "bg-muted text-muted-foreground" :
+                            "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                          }`}>
+                            {token.status.replace("_", " ")}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </ScrollArea>
             </motion.div>
           </div>
         )}

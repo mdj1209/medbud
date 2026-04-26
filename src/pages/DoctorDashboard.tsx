@@ -26,7 +26,11 @@ import {
   Save,
   ArrowUpCircle,
   Check,
-  X
+  X,
+  Eye,
+  Pencil,
+  ImagePlus,
+  Loader2
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -57,6 +61,22 @@ const DoctorDashboard = () => {
     prescription: "",
     notes: ""
   });
+
+  // For viewing/updating existing records
+  const [viewingRecordPatient, setViewingRecordPatient] = useState<any>(null);
+  const [showViewRecordModal, setShowViewRecordModal] = useState(false);
+  const [showUpdateRecordModal, setShowUpdateRecordModal] = useState(false);
+  const [updateRecordForm, setUpdateRecordForm] = useState({
+    diagnosis: "",
+    prescription: "",
+    notes: "",
+    attachments: [] as string[]
+  });
+  const [updatingRecordId, setUpdatingRecordId] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Confirmation modal for status toggle
+  const [confirmToggle, setConfirmToggle] = useState<{ tokenId: string; currentStatus: string; newStatus: string; patientName: string } | null>(null);
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -170,13 +190,27 @@ const DoctorDashboard = () => {
 
       if (recordsData) {
         setPatientRecords(recordsData);
-        // Get unique patients
+        // Get unique patients from records
         const uniquePatients = new Map();
         recordsData.forEach(record => {
           if (record.profiles && !uniquePatients.has(record.profiles.id)) {
             uniquePatients.set(record.profiles.id, record.profiles);
           }
         });
+
+        // Also add patients from completed tokens (so completed patients auto-appear)
+        if (tokensData) {
+          tokensData.forEach(token => {
+            if (token.status === "completed" && token.patient_id && token.profiles && !uniquePatients.has(token.patient_id)) {
+              uniquePatients.set(token.patient_id, {
+                id: token.patient_id,
+                full_name: token.profiles.full_name,
+                phone: token.profiles.phone,
+              });
+            }
+          });
+        }
+
         setPatients(Array.from(uniquePatients.values()));
       }
 
@@ -312,31 +346,63 @@ const DoctorDashboard = () => {
 
 
   const handleTokenStatusChange = async (tokenId: string, newStatus: string) => {
-    const { error } = await supabase
-      .from("tokens")
-      .update({ status: newStatus })
-      .eq("id", tokenId);
+    try {
+      const { error: updateError } = await supabase
+        .from("tokens")
+        .update({ status: newStatus })
+        .eq("id", tokenId);
 
-    if (error) {
-      toast({ title: "Error", description: "Failed to update token status", variant: "destructive" });
-    } else {
+      if (updateError) throw updateError;
+
       toast({ title: "Success", description: `Token marked as ${newStatus}` });
-      if (doctorInfo) {
-        const today = new Date().toISOString().split("T")[0];
-        const { data: tokensData } = await supabase
+      
+      // Auto-create an empty record when a token is completed, if it doesn't exist
+      if (newStatus === "completed" && doctorInfo) {
+        // Fetch the specific token to get the latest patient_id
+        const { data: tokenData, error: tokenError } = await supabase
           .from("tokens")
-          .select(`*, profiles:patient_id (full_name, phone)`)
-          .eq("doctor_id", doctorInfo.id)
-          .eq("token_date", today)
-          .order("token_number", { ascending: true });
+          .select("patient_id")
+          .eq("id", tokenId)
+          .single();
 
-        if (tokensData) {
-          setTokens(tokensData);
-          const completed = tokensData.filter(t => t.status === "completed").length;
-          const waiting = tokensData.filter(t => t.status === "waiting").length;
-          setTodayStats({ total: tokensData.length, completed, waiting });
+        if (tokenError) {
+          console.error("Error fetching token for record creation:", tokenError);
+        } else if (tokenData && tokenData.patient_id) {
+          const { data: existingRecords, error: checkError } = await supabase
+            .from("patient_records")
+            .select("id")
+            .eq("token_id", tokenId);
+            
+          if (checkError) {
+            console.error("Error checking existing records:", checkError);
+          } else if (!existingRecords || existingRecords.length === 0) {
+            const { error: insertError } = await supabase.from("patient_records").insert({
+              patient_id: tokenData.patient_id,
+              doctor_id: doctorInfo.id,
+              token_id: tokenId,
+              diagnosis: "",
+              prescription: "",
+              notes: "",
+              attachments: []
+            });
+            if (insertError) console.error("Error creating auto-record:", insertError);
+          }
+        } else {
+          console.log("Token has no patient_id, skipping record creation");
         }
       }
+
+      // Re-fetch all data to ensure UI is in sync
+      if (session) {
+        await fetchDoctorData(session.user.id);
+      }
+    } catch (error: any) {
+      console.error("Error in handleTokenStatusChange:", error);
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to update token status", 
+        variant: "destructive" 
+      });
     }
   };
 
@@ -372,6 +438,73 @@ const DoctorDashboard = () => {
       // Mark token as completed
       await handleTokenStatusChange(latestToken.id, "completed");
       setViewMode("tokens");
+    }
+  };
+
+  // Handle image upload for record update
+  const handleRecordImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUpdateRecordForm(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, reader.result as string]
+        }));
+        setUploadingImage(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast({ title: "Error", description: "Failed to upload image", variant: "destructive" });
+      setUploadingImage(false);
+    }
+  };
+
+  const handleUpdateRecord = async () => {
+    if (!updatingRecordId) return;
+    const { error } = await supabase
+      .from("patient_records")
+      .update({
+        diagnosis: updateRecordForm.diagnosis,
+        prescription: updateRecordForm.prescription,
+        notes: updateRecordForm.notes,
+        attachments: updateRecordForm.attachments,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", updatingRecordId);
+
+    if (error) {
+      toast({ title: "Error", description: "Failed to update record", variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: "Patient record updated" });
+      setShowUpdateRecordModal(false);
+      setUpdatingRecordId(null);
+      if (session) fetchDoctorData(session.user.id);
+    }
+  };
+
+  const handleCreateNewRecord = async () => {
+    if (!viewingRecordPatient || !doctorInfo) return;
+    const { error } = await supabase
+      .from("patient_records")
+      .insert({
+        patient_id: viewingRecordPatient.id,
+        doctor_id: doctorInfo.id,
+        token_id: tokens[0]?.id || null,
+        diagnosis: updateRecordForm.diagnosis,
+        prescription: updateRecordForm.prescription,
+        notes: updateRecordForm.notes,
+        attachments: updateRecordForm.attachments,
+      });
+
+    if (error) {
+      toast({ title: "Error", description: "Failed to create record", variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: "New patient record created" });
+      setShowUpdateRecordModal(false);
+      if (session) fetchDoctorData(session.user.id);
     }
   };
 
@@ -597,14 +730,28 @@ const DoctorDashboard = () => {
                           <p className="text-xs text-muted-foreground">{token.profiles?.phone || "No phone"}</p>
                         </div>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs ${token.status === "in_progress"
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (token.status === "waiting" || token.status === "completed") {
+                            setConfirmToggle({
+                              tokenId: token.id,
+                              currentStatus: token.status,
+                              newStatus: token.status === "waiting" ? "completed" : "waiting",
+                              patientName: token.profiles?.full_name || "Walk-in",
+                            });
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${token.status === "in_progress"
                           ? "bg-primary/10 text-primary"
                           : token.status === "waiting"
-                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                            : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                        }`}>
+                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-green-100 hover:text-green-700"
+                            : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-yellow-100 hover:text-yellow-700"
+                        }`}
+                        title={token.status === "waiting" ? "Click to mark as completed" : token.status === "completed" ? "Click to mark as waiting" : token.status}
+                      >
                         {token.status}
-                      </span>
+                      </button>
                     </div>
                   ))}
                   {tokens.filter(t => t.status !== "completed").length === 0 && (
@@ -741,9 +888,20 @@ const DoctorDashboard = () => {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 p-4">
                   {tokens.filter(t => t.status === "completed").map((token) => (
-                    <div key={token.id} className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-center">
-                      <p className="font-bold text-green-700 dark:text-green-400">#{token.token_number}</p>
+                    <div
+                      key={token.id}
+                      className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-center cursor-pointer hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors group"
+                      onClick={() => setConfirmToggle({
+                        tokenId: token.id,
+                        currentStatus: "completed",
+                        newStatus: "waiting",
+                        patientName: token.profiles?.full_name || "Walk-in",
+                      })}
+                      title="Click to move back to waiting"
+                    >
+                      <p className="font-bold text-green-700 dark:text-green-400 group-hover:text-yellow-700 dark:group-hover:text-yellow-400">#{token.token_number}</p>
                       <p className="text-xs text-muted-foreground truncate">{token.profiles?.full_name || "Walk-in"}</p>
+                      <p className="text-[10px] text-green-600 dark:text-green-400 group-hover:text-yellow-600 dark:group-hover:text-yellow-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">↻ Back to Waiting</p>
                     </div>
                   ))}
                 </div>
@@ -780,11 +938,7 @@ const DoctorDashboard = () => {
                     <motion.div
                       key={patient.id}
                       whileHover={{ scale: 1.02 }}
-                      onClick={() => {
-                        setSelectedPatient(patient);
-                        setViewMode("patient-detail");
-                      }}
-                      className="bg-card rounded-xl p-4 border border-border cursor-pointer hover:border-primary transition-colors"
+                      className="bg-card rounded-xl p-4 border border-border hover:border-primary transition-colors"
                     >
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-12 h-12 rounded-full bg-gradient-primary flex items-center justify-center">
@@ -795,11 +949,46 @@ const DoctorDashboard = () => {
                           <p className="text-sm text-muted-foreground">{patient.phone}</p>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-sm mb-3">
                         <span className="text-muted-foreground">{records.length} records</span>
-                        <span className="text-primary flex items-center">
-                          View <ChevronRight className="w-4 h-4" />
-                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingRecordPatient(patient);
+                            setShowViewRecordModal(true);
+                          }}
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" /> View
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingRecordPatient(patient);
+                            const pRecords = getPatientRecords(patient.id);
+                            if (pRecords.length > 0) {
+                              const latest = pRecords[0];
+                              setUpdatingRecordId(latest.id);
+                              setUpdateRecordForm({
+                                diagnosis: latest.diagnosis || "",
+                                prescription: latest.prescription || "",
+                                notes: latest.notes || "",
+                                attachments: (latest.attachments as string[]) || []
+                              });
+                              setShowUpdateRecordModal(true);
+                            } else {
+                              toast({ title: "No Records", description: "This patient has no records to update.", variant: "destructive" });
+                            }
+                          }}
+                        >
+                          <Pencil className="w-3.5 h-3.5 mr-1" /> Update
+                        </Button>
                       </div>
                     </motion.div>
                   );
@@ -1214,6 +1403,253 @@ const DoctorDashboard = () => {
           )}
         </AnimatePresence>
       </div>
+
+      {/* View Record Modal */}
+      {showViewRecordModal && viewingRecordPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowViewRecordModal(false)} />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden"
+          >
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Medical Records</h3>
+                <p className="text-sm text-muted-foreground">{viewingRecordPatient.full_name}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowViewRecordModal(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <ScrollArea className="max-h-[70vh] p-4">
+              {getPatientRecords(viewingRecordPatient.id).length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p>No medical records found</p>
+                </div>
+              ) : (
+                getPatientRecords(viewingRecordPatient.id).map((record) => (
+                  <div key={record.id} className="mb-4 p-4 rounded-xl bg-muted/30 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(record.created_at).toLocaleDateString()} • Token #{record.tokens?.token_number}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs h-7"
+                        onClick={() => {
+                          setUpdatingRecordId(record.id);
+                          setUpdateRecordForm({
+                            diagnosis: record.diagnosis || "",
+                            prescription: record.prescription || "",
+                            notes: record.notes || "",
+                            attachments: (record.attachments as string[]) || [],
+                          });
+                          setShowViewRecordModal(false);
+                          setShowUpdateRecordModal(true);
+                        }}
+                      >
+                        <Pencil className="w-3 h-3 mr-1" /> Edit
+                      </Button>
+                    </div>
+                    {record.diagnosis && (
+                      <div className="mb-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase">Diagnosis</p>
+                        <p className="text-foreground">{record.diagnosis}</p>
+                      </div>
+                    )}
+                    {record.prescription && (
+                      <div className="mb-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase">Prescription</p>
+                        <p className="text-foreground whitespace-pre-wrap">{record.prescription}</p>
+                      </div>
+                    )}
+                    {record.notes && (
+                      <div className="mb-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase">Notes</p>
+                        <p className="text-foreground">{record.notes}</p>
+                      </div>
+                    )}
+                    {record.attachments && (record.attachments as string[]).length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Attachments</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(record.attachments as string[]).map((img, i) => (
+                            <img key={i} src={img} alt={`Attachment ${i + 1}`} className="rounded-lg border border-border w-full h-24 object-cover cursor-pointer hover:opacity-80" onClick={() => window.open(img, '_blank')} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </ScrollArea>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Update/Create Record Modal */}
+      {showUpdateRecordModal && viewingRecordPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowUpdateRecordModal(false)} />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden"
+          >
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  {updatingRecordId ? "Update Record" : "New Record"}
+                </h3>
+                <p className="text-sm text-muted-foreground">{viewingRecordPatient.full_name}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowUpdateRecordModal(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Diagnosis</label>
+                  <Textarea
+                    placeholder="Enter diagnosis..."
+                    value={updateRecordForm.diagnosis}
+                    onChange={(e) => setUpdateRecordForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+                    rows={2}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Prescription</label>
+                  <Textarea
+                    placeholder="Enter prescription details..."
+                    value={updateRecordForm.prescription}
+                    onChange={(e) => setUpdateRecordForm(prev => ({ ...prev, prescription: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Notes</label>
+                  <Textarea
+                    placeholder="Additional notes..."
+                    value={updateRecordForm.notes}
+                    onChange={(e) => setUpdateRecordForm(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={2}
+                  />
+                </div>
+
+                {/* Image Upload */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Attachments / Images</label>
+                  {updateRecordForm.attachments.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {updateRecordForm.attachments.map((img, i) => (
+                        <div key={i} className="relative group">
+                          <img src={img} alt={`Attachment ${i + 1}`} className="rounded-lg border border-border w-full h-24 object-cover" />
+                          <button
+                            onClick={() => setUpdateRecordForm(prev => ({
+                              ...prev,
+                              attachments: prev.attachments.filter((_, idx) => idx !== i)
+                            }))}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-border hover:border-primary cursor-pointer transition-colors">
+                    {uploadingImage ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    ) : (
+                      <ImagePlus className="w-5 h-5 text-muted-foreground" />
+                    )}
+                    <span className="text-sm text-muted-foreground">
+                      {uploadingImage ? "Uploading..." : "Click to upload image"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleRecordImageUpload}
+                      disabled={uploadingImage}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    className="flex-1"
+                    onClick={updatingRecordId ? handleUpdateRecord : handleCreateNewRecord}
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {updatingRecordId ? "Update Record" : "Create Record"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowUpdateRecordModal(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </ScrollArea>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Status Toggle */}
+      {confirmToggle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setConfirmToggle(null)} />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-card rounded-2xl border border-border shadow-xl w-full max-w-sm p-6"
+          >
+            <div className="text-center mb-6">
+              <div className={`w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center ${
+                confirmToggle.newStatus === "completed"
+                  ? "bg-green-100 dark:bg-green-900/30"
+                  : "bg-yellow-100 dark:bg-yellow-900/30"
+              }`}>
+                {confirmToggle.newStatus === "completed" ? (
+                  <CheckCircle className="w-7 h-7 text-green-600" />
+                ) : (
+                  <Clock className="w-7 h-7 text-yellow-600" />
+                )}
+              </div>
+              <h3 className="text-lg font-bold text-foreground mb-2">Confirm Status Change</h3>
+              <p className="text-muted-foreground text-sm">
+                Mark <strong>{confirmToggle.patientName}</strong> as{" "}
+                <span className={`font-semibold ${
+                  confirmToggle.newStatus === "completed" ? "text-green-600" : "text-yellow-600"
+                }`}>
+                  {confirmToggle.newStatus}
+                </span>?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  handleTokenStatusChange(confirmToggle.tokenId, confirmToggle.newStatus);
+                  setConfirmToggle(null);
+                }}
+              >
+                {confirmToggle.newStatus === "completed" ? (
+                  <><CheckCircle className="w-4 h-4 mr-2" /> Yes, Completed</>
+                ) : (
+                  <><Clock className="w-4 h-4 mr-2" /> Yes, Back to Waiting</>
+                )}
+              </Button>
+              <Button variant="outline" onClick={() => setConfirmToggle(null)}>
+                Cancel
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
