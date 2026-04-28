@@ -358,11 +358,11 @@ const PatientDashboard = () => {
                         <Button variant="ghost" size="sm" className="text-xs h-7" onClick={markAllAsRead}>Mark all read</Button>
                       )}
                     </div>
-                    <ScrollArea className="max-h-72">
+                    <div className="max-h-80 overflow-y-auto custom-scrollbar">
                       {notifications.length === 0 ? (
                         <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
                       ) : (
-                        notifications.slice(0, 15).map((n) => (
+                        notifications.map((n) => (
                           <div key={n.id} className={`p-3 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 ${!n.is_read ? "bg-primary/5" : ""}`} onClick={() => markAsRead(n.id)}>
                             <p className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{n.title}</p>
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
@@ -370,7 +370,7 @@ const PatientDashboard = () => {
                           </div>
                         ))
                       )}
-                    </ScrollArea>
+                    </div>
                   </div>
                 )}
               </div>
@@ -453,8 +453,14 @@ const PatientDashboard = () => {
                       </div>
                       <div className="flex items-center justify-between mt-2">
                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full ${
-                          apt.status === "confirmed" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                        }`}>{apt.status}</span>
+                          apt.status === "confirmed" 
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
+                            : apt.status === "pending"
+                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        }`}>
+                          {apt.status === "pending" ? "Pending Approval" : apt.status}
+                        </span>
                         {apt.status === "confirmed" && new Date(apt.appointment_date) > new Date() && (
                           <Button size="sm" variant="outline" className="text-xs h-7 gap-1 text-orange-600 border-orange-300 hover:bg-orange-50" onClick={() => openPreponeModal(apt)}>
                             <ArrowUpCircle className="w-3.5 h-3.5" /> Request Prepone

@@ -30,12 +30,14 @@ import {
   Eye,
   Pencil,
   ImagePlus,
-  Loader2
+  Loader2,
+  CalendarCheck,
+  AlertCircle
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail" | "settings" | "prepone-requests" | "appointments";
+type ViewMode = "dashboard" | "tokens" | "patients" | "records" | "patient-detail" | "settings" | "prepone-requests" | "appointments" | "booking-requests";
 
 const DoctorDashboard = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -51,6 +53,7 @@ const DoctorDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [preponeRequests, setPreponeRequests] = useState<any[]>([]);
+  const [bookingRequests, setBookingRequests] = useState<any[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
   const [todayStats, setTodayStats] = useState({ total: 0, completed: 0, waiting: 0 });
 
@@ -141,6 +144,18 @@ const DoctorDashboard = () => {
         navigate("/dashboard");
         return;
       }
+
+      // If doctor is rejected (is_active === false), redirect or show message
+      if (doctorData.is_active === false) {
+        toast({
+          title: "Account Rejected",
+          description: "Your doctor account has been rejected by the administrator. Please contact support.",
+          variant: "destructive",
+        });
+        navigate("/dashboard");
+        return;
+      }
+
       setDoctorInfo(doctorData);
 
       // Fetch today's tokens
@@ -162,7 +177,7 @@ const DoctorDashboard = () => {
         setTodayStats({ total: tokensData.length, completed, waiting });
       }
 
-      // Fetch appointments for today + next 7 days with patient details
+      // Fetch confirmed appointments for today + next 7 days with patient details
       const weekFromNow = new Date();
       weekFromNow.setDate(weekFromNow.getDate() + 7);
       const weekEnd = weekFromNow.toISOString().split("T")[0];
@@ -170,12 +185,23 @@ const DoctorDashboard = () => {
         .from("appointments")
         .select("*, profiles:patient_id (full_name, phone)")
         .eq("doctor_id", doctorData.id)
+        .eq("status", "confirmed")
         .gte("appointment_date", today)
         .lte("appointment_date", weekEnd)
         .order("appointment_date", { ascending: true })
         .order("appointment_time", { ascending: true });
 
       if (appointmentsData) setAppointments(appointmentsData);
+
+      // Fetch pending booking requests
+      const { data: pendingData } = await supabase
+        .from("appointments")
+        .select("*, profiles:patient_id (full_name, phone)")
+        .eq("doctor_id", doctorData.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      if (pendingData) setBookingRequests(pendingData);
 
       // Fetch patients with records
       const { data: recordsData } = await supabase
@@ -218,6 +244,66 @@ const DoctorDashboard = () => {
       console.error("Error fetching doctor data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBookingAction = async (appointmentId: string, action: "accept" | "decline") => {
+    try {
+      if (action === "accept") {
+        const { error } = await supabase
+          .from("appointments")
+          .update({ status: "confirmed" })
+          .eq("id", appointmentId);
+
+        if (error) throw error;
+
+        // Create notification for patient
+        const appointment = bookingRequests.find(a => a.id === appointmentId);
+        if (appointment && appointment.patient_id) {
+          // Create token for the appointment
+          const { count } = await supabase
+            .from("tokens")
+            .select('*', { count: 'exact', head: true })
+            .eq('token_date', appointment.appointment_date);
+          
+          const orderIndex = (count || 0) + 1;
+          const day = new Date(appointment.appointment_date).getDate().toString().padStart(2, '0');
+          const newTokenNumber = Number(`${day}${orderIndex.toString().padStart(2, '0')}`);
+
+          await supabase.from("tokens").insert({
+            doctor_id: doctorInfo.id,
+            appointment_id: appointmentId,
+            token_number: newTokenNumber,
+            token_date: appointment.appointment_date,
+            token_type: "online",
+            status: "waiting",
+            estimated_time: `${appointment.appointment_date}T${appointment.appointment_time}`,
+          });
+
+          await supabase.from("notifications").insert({
+            user_id: appointment.patient_id,
+            type: "appointment_confirmed",
+            title: "✅ Appointment Confirmed!",
+            message: `Dr. ${profile?.full_name} has accepted your appointment for ${new Date(appointment.appointment_date).toLocaleDateString()} at ${appointment.appointment_time}.`,
+            metadata: { appointment_id: appointmentId },
+          });
+        }
+
+        toast({ title: "Appointment Accepted", description: "The patient has been notified and a token has been generated." });
+      } else {
+        const { error } = await supabase
+          .from("appointments")
+          .update({ status: "cancelled" })
+          .eq("id", appointmentId);
+
+        if (error) throw error;
+        toast({ title: "Appointment Declined", variant: "destructive" });
+      }
+
+      if (session) fetchDoctorData(session.user.id);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "Failed to update appointment", variant: "destructive" });
     }
   };
 
@@ -548,59 +634,125 @@ const DoctorDashboard = () => {
               <div className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center">
                 <Stethoscope className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">Doctor Dashboard</h1>
-                <p className="text-xs text-muted-foreground">Dr. {profile?.full_name}</p>
-              </div>
+              <span className="text-xl font-bold text-foreground hidden sm:inline-block">MedBud</span>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-4">
               <div className="relative" ref={notifRef}>
-                <Button variant="ghost" size="icon" className="relative" onClick={() => setShowNotifications(!showNotifications)}>
-                  <Bell className="w-5 h-5" />
-                  {(unreadCount > 0 || preponeRequests.filter(r => r.status === "pending").length > 0) && (
-                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                      {unreadCount + preponeRequests.filter(r => r.status === "pending").length}
-                    </span>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="relative"
+                  onClick={() => setShowNotifications(!showNotifications)}
+                >
+                  <Bell className="w-5 h-5 text-muted-foreground" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
                   )}
                 </Button>
-                {showNotifications && (
-                  <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
-                    <div className="p-3 border-b border-border flex items-center justify-between">
-                      <h4 className="font-semibold text-sm">Notifications</h4>
-                      {unreadCount > 0 && (
-                        <Button variant="ghost" size="sm" className="text-xs h-7" onClick={markAllAsRead}>
-                          Mark all read
-                        </Button>
-                      )}
-                    </div>
-                    <ScrollArea className="max-h-[450px]">
-                      {notifications.length === 0 ? (
-                        <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
-                      ) : (
-                        notifications.map((n) => (
-                          <div
-                            key={n.id}
-                            className={`p-3 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${!n.is_read ? "bg-primary/5" : ""}`}
-                            onClick={() => { markAsRead(n.id); if (n.type === "prepone_request") setViewMode("prepone-requests"); }}
-                          >
-                            <p className={`text-sm ${!n.is_read ? "font-semibold" : ""}`}>{n.title}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{n.message}</p>
-                            <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                
+                <AnimatePresence>
+                  {showNotifications && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 bg-card rounded-xl shadow-large border border-border overflow-hidden z-[60]"
+                    >
+                      <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
+                        <h3 className="font-semibold text-sm">Notifications</h3>
+                        <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase">{unreadCount} New</span>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                        {notifications.length === 0 ? (
+                          <div className="p-8 text-center text-muted-foreground">
+                            <p className="text-sm">No notifications</p>
                           </div>
-                        ))
-                      )}
-                    </ScrollArea>
-                  </div>
-                )}
+                        ) : (
+                          notifications.map((notif) => (
+                            <div 
+                              key={notif.id} 
+                              className={`p-4 border-b border-border last:border-0 hover:bg-muted/50 transition-colors cursor-pointer ${!notif.read_at ? "bg-primary/5" : ""}`}
+                              onClick={() => markAsRead(notif.id)}
+                            >
+                              <div className="flex gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                                  notif.type === 'booking' ? 'bg-blue-100 text-blue-600' : 
+                                  notif.type === 'prepone' ? 'bg-orange-100 text-orange-600' : 'bg-primary/10 text-primary'
+                                }`}>
+                                  {notif.type === 'booking' ? <Calendar className="w-4 h-4" /> : 
+                                   notif.type === 'prepone' ? <ArrowUpCircle className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground leading-tight">{notif.title}</p>
+                                  <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
+                                  <p className="text-[10px] text-muted-foreground mt-2">{new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <Button onClick={handleLogout} variant="ghost" size="sm">
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </Button>
+
+              <div className="h-8 w-px bg-border hidden sm:block" />
+              
+              <div className="flex items-center gap-3">
+                <div className="text-right hidden md:block">
+                  <p className="text-sm font-semibold text-foreground leading-none">{profile?.full_name}</p>
+                  <p className="text-xs text-muted-foreground mt-1 capitalize">{doctorInfo?.specialization}</p>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={handleLogout}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </nav>
+
+      <main className="container mx-auto px-4 py-8 relative">
+        {!doctorInfo?.is_active ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Card className="max-w-md w-full p-8 text-center shadow-2xl border-primary/20 bg-card">
+              <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-6">
+                <Clock className="w-10 h-10 text-amber-600 dark:text-amber-400 animate-pulse" />
+              </div>
+              <h2 className="text-2xl font-bold mb-3">Verification Under Process</h2>
+              <p className="text-muted-foreground mb-6">
+                Your professional profile is currently being reviewed by our administrative team. 
+                You will gain full access to the dashboard once your medical license is verified.
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 text-sm text-left bg-muted p-3 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                  <span>Expect 24-48 hours for the verification process.</span>
+                </div>
+                <Button variant="outline" className="w-full" onClick={() => navigate("/")}>
+                  Return to Home
+                </Button>
+              </div>
+            </Card>
+          </div>
+        ) : (
+          <>
+            {viewMode === "dashboard" && (
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground">Welcome back, Dr. {profile?.full_name}</h1>
+                  <p className="text-muted-foreground">Here's what's happening with your practice today.</p>
+                </div>
+              </div>
+            )}
+
 
       <div className="container mx-auto px-4 py-6">
         <AnimatePresence mode="wait">
@@ -630,7 +782,25 @@ const DoctorDashboard = () => {
               </div>
 
               {/* Feature Cards */}
+              {/* Feature Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* 1. Booking Requests */}
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => setViewMode("booking-requests")}
+                  className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <CalendarCheck className="w-7 h-7 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Booking Requests</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Review and approve new appointment bookings</p>
+                  <div className="flex items-center text-primary text-sm font-medium">
+                    {bookingRequests.length} pending <ChevronRight className="w-4 h-4 ml-1" />
+                  </div>
+                </motion.div>
+
+                {/* 2. Token Queue */}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   onClick={() => setViewMode("tokens")}
@@ -646,36 +816,24 @@ const DoctorDashboard = () => {
                   </div>
                 </motion.div>
 
+
+                {/* 3. Prepone Settings (Prepone Requests) */}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
-                  onClick={() => setViewMode("patients")}
+                  onClick={() => setViewMode("prepone-requests")}
                   className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
                 >
-                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                    <Users className="w-7 h-7 text-primary" />
+                  <div className="w-14 h-14 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4 group-hover:bg-orange-500/20 transition-colors">
+                    <ArrowUpCircle className="w-7 h-7 text-orange-500" />
                   </div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Patient Records</h3>
-                  <p className="text-muted-foreground text-sm mb-4">View and manage patient medical history</p>
-                  <div className="flex items-center text-primary text-sm font-medium">
-                    {patients.length} patients <ChevronRight className="w-4 h-4 ml-1" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Prepone Settings</h3>
+                  <p className="text-muted-foreground text-sm mb-4">Review patient requests for earlier appointments</p>
+                  <div className="flex items-center text-orange-500 text-sm font-medium">
+                    {preponeRequests.filter(r => r.status === "pending").length} pending <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
 
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  onClick={() => setViewMode("appointments")}
-                  className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                    <Calendar className="w-7 h-7 text-primary" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Appointments</h3>
-                  <p className="text-muted-foreground text-sm mb-4">View upcoming 7-day schedule</p>
-                  <div className="flex items-center text-primary text-sm font-medium">
-                    {appointments.length} upcoming <ChevronRight className="w-4 h-4 ml-1" />
-                  </div>
-                </motion.div>
-
+                {/* 4. Profile & Settings */}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   onClick={() => setViewMode("settings")}
@@ -691,77 +849,183 @@ const DoctorDashboard = () => {
                   </div>
                 </motion.div>
 
+                {/* 5. Patient Records */}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
-                  onClick={() => setViewMode("prepone-requests")}
+                  onClick={() => setViewMode("patients")}
                   className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
                 >
-                  <div className="w-14 h-14 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4 group-hover:bg-orange-500/20 transition-colors">
-                    <ArrowUpCircle className="w-7 h-7 text-orange-500" />
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <Users className="w-7 h-7 text-primary" />
                   </div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Prepone Requests</h3>
-                  <p className="text-muted-foreground text-sm mb-4">Review patient prepone requests</p>
-                  <div className="flex items-center text-orange-500 text-sm font-medium">
-                    {preponeRequests.filter(r => r.status === "pending").length} pending <ChevronRight className="w-4 h-4 ml-1" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Patient Records</h3>
+                  <p className="text-muted-foreground text-sm mb-4">View and manage patient medical history</p>
+                  <div className="flex items-center text-primary text-sm font-medium">
+                    {patients.length} patients <ChevronRight className="w-4 h-4 ml-1" />
+                  </div>
+                </motion.div>
+
+                {/* 6. Appointments */}
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => setViewMode("appointments")}
+                  className="bg-card rounded-xl shadow-soft p-6 border border-border cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <Calendar className="w-7 h-7 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Appointments</h3>
+                  <p className="text-muted-foreground text-sm mb-4">View upcoming 7-day schedule</p>
+                  <div className="flex items-center text-primary text-sm font-medium">
+                    {appointments.length} upcoming <ChevronRight className="w-4 h-4 ml-1" />
                   </div>
                 </motion.div>
               </div>
 
-              {/* Quick Token List */}
-              <div className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
-                <div className="p-4 border-b border-border flex items-center justify-between">
-                  <h3 className="font-semibold text-foreground">Current Queue</h3>
-                  <Button variant="ghost" size="sm" onClick={() => setViewMode("tokens")}>
-                    View All <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+              <div className="grid grid-cols-1 gap-6 mt-6">
+                {/* Quick Token List (Moved up since Booking Requests is now a card) */}
+
+
+                {/* Quick Token List */}
+                <div className="bg-card rounded-xl shadow-soft border border-border overflow-hidden flex flex-col">
+                  <div className="p-4 border-b border-border flex items-center justify-between">
+                    <h3 className="font-semibold text-foreground">Current Queue</h3>
+                    <Button variant="ghost" size="sm" onClick={() => setViewMode("tokens")}>
+                      View All <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto custom-scrollbar flex-1">
+                    {tokens.filter(t => t.status !== "completed").slice(0, 5).map((token) => (
+                      <div key={token.id} className="p-4 border-b border-border last:border-0 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${token.status === "in_progress"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground"
+                            }`}>
+                            {token.token_number}
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">{token.profiles?.full_name || "Walk-in"}</p>
+                            <p className="text-xs text-muted-foreground">{token.profiles?.phone || "No phone"}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (token.status === "waiting" || token.status === "completed") {
+                              setConfirmToggle({
+                                tokenId: token.id,
+                                currentStatus: token.status,
+                                newStatus: token.status === "waiting" ? "completed" : "waiting",
+                                patientName: token.profiles?.full_name || "Walk-in",
+                              });
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${token.status === "in_progress"
+                            ? "bg-primary/10 text-primary"
+                            : token.status === "waiting"
+                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-green-100 hover:text-green-700"
+                              : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-yellow-100 hover:text-yellow-700"
+                          }`}
+                          title={token.status === "waiting" ? "Click to mark as completed" : token.status === "completed" ? "Click to mark as waiting" : token.status}
+                        >
+                          {token.status}
+                        </button>
+                      </div>
+                    ))}
+                    {tokens.filter(t => t.status !== "completed").length === 0 && (
+                      <div className="p-12 text-center text-muted-foreground">
+                        <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                        <p>No patients in queue</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <ScrollArea className="h-64">
-                  {tokens.filter(t => t.status !== "completed").slice(0, 5).map((token) => (
-                    <div key={token.id} className="p-4 border-b border-border last:border-0 flex items-center justify-between">
+              </div>
+            </motion.div>
+          )}
+
+          {/* Booking Requests View */}
+          {viewMode === "booking-requests" && (
+            <motion.div
+              key="booking-requests"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
+            >
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="icon" onClick={() => setViewMode("dashboard")}>
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Booking Requests</h2>
+                  <p className="text-muted-foreground">Review and approve appointment requests</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {bookingRequests.map((req) => (
+                  <motion.div
+                    key={req.id}
+                    whileHover={{ scale: 1.01 }}
+                    className="bg-card rounded-xl border border-border overflow-hidden flex flex-col shadow-soft"
+                  >
+                    <div className="p-4 border-b border-border bg-primary/5 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${token.status === "in_progress"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground"
-                          }`}>
-                          {token.token_number}
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg">
+                          {req.profiles?.full_name?.charAt(0) || "P"}
                         </div>
                         <div>
-                          <p className="font-medium text-foreground">{token.profiles?.full_name || "Walk-in"}</p>
-                          <p className="text-xs text-muted-foreground">{token.profiles?.phone || "No phone"}</p>
+                          <p className="font-bold text-foreground">{req.profiles?.full_name || "New Patient"}</p>
+                          <p className="text-xs text-muted-foreground">{req.profiles?.phone || "No phone"}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (token.status === "waiting" || token.status === "completed") {
-                            setConfirmToggle({
-                              tokenId: token.id,
-                              currentStatus: token.status,
-                              newStatus: token.status === "waiting" ? "completed" : "waiting",
-                              patientName: token.profiles?.full_name || "Walk-in",
-                            });
-                          }
-                        }}
-                        className={`px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${token.status === "in_progress"
-                          ? "bg-primary/10 text-primary"
-                          : token.status === "waiting"
-                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-green-100 hover:text-green-700"
-                            : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-yellow-100 hover:text-yellow-700"
-                        }`}
-                        title={token.status === "waiting" ? "Click to mark as completed" : token.status === "completed" ? "Click to mark as waiting" : token.status}
-                      >
-                        {token.status}
-                      </button>
                     </div>
-                  ))}
-                  {tokens.filter(t => t.status !== "completed").length === 0 && (
-                    <div className="p-8 text-center text-muted-foreground">
-                      <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                      <p>No patients in queue</p>
+                    <div className="p-4 flex-1 space-y-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          <span>{new Date(req.appointment_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Clock className="w-4 h-4 text-primary" />
+                          <span>{req.appointment_time}</span>
+                        </div>
+                      </div>
+
+                      {req.symptoms && (
+                        <div className="bg-muted/50 p-3 rounded-lg border border-border/50">
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Symptoms</p>
+                          <p className="text-sm text-foreground italic">"{req.symptoms}"</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3 pt-2">
+                        <Button className="flex-1" onClick={() => handleBookingAction(req.id, "accept")}>
+                          <CheckCircle className="w-4 h-4 mr-2" /> Accept
+                        </Button>
+                        <Button variant="outline" className="flex-1 text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => handleBookingAction(req.id, "decline")}>
+                          <XCircle className="w-4 h-4 mr-2" /> Decline
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                </ScrollArea>
+                  </motion.div>
+                ))}
               </div>
+
+              {bookingRequests.length === 0 && (
+                <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-border">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-10 h-10 text-green-600" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground">All caught up!</h3>
+                  <p className="text-muted-foreground max-w-xs mx-auto mt-2">There are no pending booking requests at the moment.</p>
+                  <Button variant="outline" className="mt-6" onClick={() => setViewMode("dashboard")}>
+                    Back to Dashboard
+                  </Button>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -1460,6 +1724,9 @@ const DoctorDashboard = () => {
           )}
         </AnimatePresence>
       </div>
+          </>
+        )}
+    </main>
 
       {/* View Record Modal */}
       {showViewRecordModal && viewingRecordPatient && (
@@ -1689,8 +1956,8 @@ const DoctorDashboard = () => {
             <div className="flex gap-3">
               <Button
                 className="flex-1"
-                onClick={() => {
-                  handleTokenStatusChange(confirmToggle.tokenId, confirmToggle.newStatus);
+                onClick={async () => {
+                  await handleTokenStatusChange(confirmToggle.tokenId, confirmToggle.newStatus);
                   setConfirmToggle(null);
                 }}
               >

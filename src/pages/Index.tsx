@@ -88,7 +88,7 @@ const Index = () => {
             className="flex-1 w-full relative"
           >
             <div className="rounded-3xl overflow-hidden shadow-2xl">
-              <img alt="Friendly doctor holding a tablet" className="w-full h-auto object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWUohhFBJzQPmevY1CUY-VDfxnOaSfJYUZC2lrcsZJ-PIwqKIfyDYH8UpnaEXv9LavWCV6W8FXo1Q13wvKJTN3U7KTLtKqa6AfPgXk2LpAcfGXKs_Y7fLpwedgClRQJOmtqgtHMJt9BEG21U_438suePMq4RrX9chRfQ7EyIaqGp67oTXNL103M6qsjxLyG7r76Ugo40r4XgFG-IV1EAjDL-rmUcJuWSF4zWUkQAIOx9r0tEIIX0DEnwgkJPAfVbc6Ayd0WGSATqa8"/>
+              <img alt="MedBud medical team" className="w-full h-auto object-cover" src="/medpic.jpeg"/>
             </div>
             <div className="absolute -bottom-6 -left-6 bg-card p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce">
               <div className="bg-primary/10 p-2 rounded-full">

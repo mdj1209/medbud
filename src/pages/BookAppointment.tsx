@@ -418,7 +418,7 @@ const BookAppointment = () => {
             symptoms: bookingDetails.symptoms || null,
             payment_status: "completed",
             payment_method: paymentMethod,
-            status: "confirmed",
+            status: "pending",
           },
         ]);
 
@@ -427,24 +427,7 @@ const BookAppointment = () => {
         throw apptError;
       }
 
-      const { error: tokenError } = await supabase
-        .from("tokens")
-        .insert([
-          {
-            doctor_id: selectedDoctor.id,
-            appointment_id: newAppointmentId,
-            token_number: newTokenNumber,
-            token_date: selectedDate,
-            token_type: "online",
-            status: "waiting",
-            estimated_time: `${selectedDate}T${selectedTime}`,
-          },
-        ]);
 
-      if (tokenError) {
-        console.error("Token insert error:", tokenError);
-        throw tokenError;
-      }
 
       // Notify doctor in real-time
       try {
@@ -518,12 +501,12 @@ const BookAppointment = () => {
     doc.setTextColor(0, 0, 0);
     
     // Booking confirmation badge
-    doc.setFillColor(220, 252, 231);
+    doc.setFillColor(254, 249, 195);
     doc.roundedRect(60, 50, 90, 20, 3, 3, 'F');
-    doc.setTextColor(22, 101, 52);
+    doc.setTextColor(161, 98, 7);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('✓ BOOKING CONFIRMED', pageWidth / 2, 63, { align: 'center' });
+    doc.text('⧗ REQUEST PENDING', pageWidth / 2, 63, { align: 'center' });
     
     // Reset text color
     doc.setTextColor(0, 0, 0);
@@ -1318,9 +1301,9 @@ const BookAppointment = () => {
                   transition={{ delay: 0.2 }}
                 >
                   <h2 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                    Appointment Booked Successfully!
+                    Booking Request Sent!
                   </h2>
-                  <p className="text-muted-foreground">Your appointment has been confirmed. See you soon!</p>
+                  <p className="text-muted-foreground">Your appointment request has been sent to the doctor. You will receive a notification once it's confirmed!</p>
                 </motion.div>
 
                 {/* Animated Ticket */}
@@ -1439,15 +1422,19 @@ const BookAppointment = () => {
                         </motion.div>
                       )}
 
-                      {/* Payment Status Badge */}
+                      {/* Status Badge */}
                       <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 1, type: "spring" }}
-                        className="flex items-center justify-center gap-2"
+                        className="flex flex-col items-center justify-center gap-2"
                       >
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
-                          <CheckCircle className="h-4 w-4" />
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 text-sm font-medium border border-yellow-200">
+                          <Clock className="h-4 w-4" />
+                          Pending Doctor Approval
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                          <CheckCircle className="h-3 w-3" />
                           Payment {paymentMethod === 'cash' ? 'At Clinic' : 'Completed'} • {paymentMethod.toUpperCase()}
                         </span>
                       </motion.div>

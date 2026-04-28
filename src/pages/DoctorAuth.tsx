@@ -26,6 +26,7 @@ const doctorSignupSchema = z.object({
   city: z.string().trim().min(2, "City is required"),
   state: z.string().trim().min(2, "State is required"),
   pincode: z.string().trim().optional(),
+  license_number: z.string().trim().min(5, "License number is required"),
 });
 
 const loginSchema = z.object({
@@ -55,6 +56,8 @@ const DoctorAuth = () => {
   const [city, setCity] = useState("Vizag");
   const [state, setState] = useState("Andhra Pradesh");
   const [pincode, setPincode] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
   
   // Password reset fields
   const [otp, setOtp] = useState("");
@@ -180,6 +183,7 @@ const DoctorAuth = () => {
         consultation_fee: consultationFee, education, bio,
         clinic_name: clinicName, clinic_address: clinicAddress,
         city, state, pincode,
+        license_number: licenseNumber,
       });
 
       // Step 1: Create user + doctor profile via edge function (admin API - auto-confirmed)
@@ -205,6 +209,8 @@ const DoctorAuth = () => {
               city: city.trim(),
               state: state.trim(),
               pincode: pincode.trim() || "",
+              license_number: licenseNumber.trim(),
+              is_active: null,
             },
           }),
         }
@@ -215,6 +221,27 @@ const DoctorAuth = () => {
       if (!response.ok) {
         toast({ title: "Signup failed", description: result.error || "Something went wrong", variant: "destructive" });
         return;
+      }
+
+      // Upload License Document if present
+      if (licenseFile && result.user?.id) {
+        const fileExt = licenseFile.name.split('.').pop();
+        const fileName = `${result.user.id}/license.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('doctor-documents')
+          .upload(fileName, licenseFile, { upsert: true });
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('doctor-documents')
+            .getPublicUrl(fileName);
+          
+          // Update doctor record with document URL
+          await supabase
+            .from('doctors')
+            .update({ document_url: publicUrl })
+            .eq('user_id', result.user.id);
+        }
       }
 
       // Step 2: Sign in immediately
@@ -454,8 +481,28 @@ const DoctorAuth = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="bio">Bio (optional)</Label>
                   <Textarea id="bio" placeholder="Brief description about yourself..." value={bio} onChange={(e) => setBio(e.target.value)} rows={2} maxLength={500} className="mt-1" />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="license">Medical License Number *</Label>
+                    <div className="relative mt-1">
+                      <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input id="license" placeholder="REG-123456789" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} className="pl-10" required />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="document">License Document (PDF/Image) *</Label>
+                    <Input 
+                      id="document" 
+                      type="file" 
+                      accept=".pdf,image/*" 
+                      onChange={(e) => setLicenseFile(e.target.files?.[0] || null)}
+                      className="mt-1 text-xs"
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-3 border-t border-border">

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +13,7 @@ import NotFound from "./pages/NotFound";
 import BookAppointment from "./pages/BookAppointment";
 import DoctorSignup from "./pages/DoctorSignup";
 import DoctorAuth from "./pages/DoctorAuth";
+import AdminPanel from "./pages/AdminPanel";
 
 
 const queryClient = new QueryClient();
@@ -45,6 +47,12 @@ const App = () => {
     return <MissingConfig />;
   }
 
+  useEffect(() => {
+    if (window.location.hash === "#admins") {
+      window.location.replace("/admin-panel");
+    }
+  }, []);
+
   return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -60,6 +68,7 @@ const App = () => {
           <Route path="/doctor-dashboard" element={<DoctorDashboard />} />
           <Route path="/book-appointment" element={<BookAppointment />} />
           <Route path="/doctor-signup" element={<DoctorSignup />} />
+          <Route path="/admin-panel" element={<AdminPanel />} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
