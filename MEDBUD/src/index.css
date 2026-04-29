@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* MedBud Design System - Medical Platform Theme */
+    --background: 210 20% 98%;  /* #F8FAFB */
+    --foreground: 215 25% 12%;  /* #1A202C */
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 12%;
+
+    --primary: 207 73% 57%;  /* #4A90E2 - Main brand color */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 207 64% 47%;  /* #2C7BC4 */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 207 73% 57%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 152 69% 39%;  /* #10B981 */
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 95% 51%;  /* #F59E0B */
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 4 90% 58%;  /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 207 73% 57%;
+
+    --radius: 0.75rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(207 73% 57%), hsl(207 64% 47%));
+    --gradient-success: linear-gradient(135deg, hsl(152 69% 39%), hsl(152 69% 49%));
+    
+    /* Shadows */
+    --shadow-soft: 0 2px 8px hsl(207 73% 57% / 0.08);
+    --shadow-medium: 0 4px 16px hsl(207 73% 57% / 0.12);
+    --shadow-large: 0 8px 24px hsl(207 73% 57% / 0.16);
+    
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-spring: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .dark {
+    --background: 215 25% 12%;
+    --foreground: 210 20% 98%;
+
+    --card: 215 25% 15%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 215 25% 15%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 207 73% 57%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 207 64% 47%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 215 25% 20%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 207 73% 57%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 152 69% 39%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 95% 51%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 4 90% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 25% 25%;
+    --input: 215 25% 25%;
+    --ring: 207 73% 57%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-poppins antialiased;
+  }
+}
+
+/* Custom utility classes for MedBud */
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .gradient-success {
+    background: var(--gradient-success);
+  }
+  
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-medium {
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .shadow-large {
+    box-shadow: var(--shadow-large);
+  }
+  
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  
+  .transition-spring {
+    transition: var(--transition-spring);
+  }
+}
